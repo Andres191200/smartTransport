@@ -8,6 +8,8 @@ import 'package:material_ui/material_ui.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
+import '../settings/theme_controller.dart';
+import 'app_drawer.dart';
 import 'markers.dart';
 import 'sheets.dart';
 
@@ -26,9 +28,10 @@ String joinSpanish(List<String> items) => items.length <= 1
     : '${items.sublist(0, items.length - 1).join(', ')} y ${items.last}';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key, required this.api});
+  const MapScreen({super.key, required this.api, required this.theme});
 
   final TransitApi api;
+  final ThemeController theme;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -232,6 +235,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         _layers.contains(TransitLayer.buses) && _busLine == null && _zoom < _minZoomBuses;
 
     return Scaffold(
+      drawer: AppDrawer(theme: widget.theme),
       body: Stack(
         children: [
           FlutterMap(
@@ -386,9 +390,12 @@ class _TopBar extends StatelessWidget {
       color: Theme.of(context).colorScheme.surface,
       child: Row(
         children: [
-          const SizedBox(width: 16),
-          const Icon(Icons.directions_bus_outlined),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Menú',
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
           Expanded(
             child: TextField(
               controller: controller,
