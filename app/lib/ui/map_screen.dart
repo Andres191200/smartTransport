@@ -429,9 +429,9 @@ class _LayerChips extends StatelessWidget {
   final void Function(TransitLayer, bool) onToggle;
 
   static const _buttons = {
-    TransitLayer.buses: ('Colectivos', ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
-    TransitLayer.subway: ('Subte', ToggleTextButtonCustomization(borderColor: Color(0xFF7B1FA2))),
-    TransitLayer.bikes: ('Ecobici', ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
+    TransitLayer.buses: ('Colectivos', Icons.directions_bus, ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
+    TransitLayer.subway: ('Subte', Icons.subway, ToggleTextButtonCustomization(borderColor: Color(0xFF7B1FA2))),
+    TransitLayer.bikes: ('Ecobici', Icons.pedal_bike, ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
   };
 
   @override
@@ -439,9 +439,10 @@ class _LayerChips extends StatelessWidget {
     return Wrap(
       spacing: 8,
       children: [
-        for (final MapEntry(key: layer, value: (text, customization)) in _buttons.entries)
+        for (final MapEntry(key: layer, value: (text, icon, customization)) in _buttons.entries)
           ToggleTextButton(
             text: text,
+            icon: icon,
             isActive: active.contains(layer),
             onTap: () => onToggle(layer, !active.contains(layer)),
             customization: customization,

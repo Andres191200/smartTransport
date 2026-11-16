@@ -45,6 +45,23 @@ void main() {
     expect(borderOf(tester).color, red);
   });
 
+  testWidgets('ícono opcional y tipografía de chip (labelLarge)', (tester) async {
+    final theme = ThemeData();
+    await pump(tester, ToggleTextButton(text: 'Subte', isActive: false, onTap: () {}), theme: theme);
+    expect(find.byType(Icon), findsNothing);
+
+    await pump(
+      tester,
+      ToggleTextButton(text: 'Subte', icon: Icons.subway, isActive: false, onTap: () {}),
+      theme: theme,
+    );
+    expect(find.byIcon(Icons.subway), findsOneWidget);
+    final style = tester.widget<Text>(find.text('Subte')).style!;
+    final labelLarge = Theme.of(tester.element(find.text('Subte'))).textTheme.labelLarge!;
+    expect(style.fontSize, labelLarge.fontSize);
+    expect(style.fontWeight, labelLarge.fontWeight);
+  });
+
   testWidgets('onTap se llama al tocar', (tester) async {
     var taps = 0;
     await pump(tester, ToggleTextButton(text: 'Colectivos', isActive: false, onTap: () => taps++));

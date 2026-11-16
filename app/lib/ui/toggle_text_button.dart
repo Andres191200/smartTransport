@@ -10,18 +10,23 @@ class ToggleTextButtonCustomization {
 }
 
 /// Botón de texto que se prende y apaga. Activo, muestra un borde de color.
+/// La tipografía y el ícono siguen el estilo de los chips de Material 3.
 class ToggleTextButton extends StatelessWidget {
   const ToggleTextButton({
     super.key,
     required this.text,
     required this.onTap,
     required this.isActive,
+    this.icon,
     this.customization = const ToggleTextButtonCustomization(),
   });
 
   final String text;
   final VoidCallback onTap;
   final bool isActive;
+
+  /// Ícono opcional a la izquierda del texto.
+  final IconData? icon;
   final ToggleTextButtonCustomization customization;
 
   static const borderWidth = 2.0;
@@ -32,6 +37,7 @@ class ToggleTextButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final borderColor = customization.borderColor ?? defaultBorderColor(colors);
     // Inactivo lleva un borde transparente del mismo ancho, para que el botón no cambie de tamaño.
     final shape = StadiumBorder(
@@ -49,8 +55,17 @@ class ToggleTextButton extends StatelessWidget {
           customBorder: shape,
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(text),
+            padding: EdgeInsetsDirectional.fromSTEB(icon == null ? 16 : 8, 6, 16, 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon case final icon?) ...[
+                  Icon(icon, size: 18, color: colors.primary),
+                  const SizedBox(width: 8),
+                ],
+                Text(text, style: textTheme.labelLarge?.copyWith(color: colors.onSurfaceVariant)),
+              ],
+            ),
           ),
         ),
       ),
