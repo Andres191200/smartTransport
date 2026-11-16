@@ -13,6 +13,7 @@ import 'app_drawer.dart';
 import 'base_map.dart';
 import 'markers.dart';
 import 'sheets.dart';
+import 'toggle_text_button.dart';
 
 enum TransitLayer { buses, subway, bikes }
 
@@ -427,10 +428,10 @@ class _LayerChips extends StatelessWidget {
   final Set<TransitLayer> active;
   final void Function(TransitLayer, bool) onToggle;
 
-  static const _labels = {
-    TransitLayer.buses: ('Colectivos', Icons.directions_bus),
-    TransitLayer.subway: ('Subte', Icons.subway),
-    TransitLayer.bikes: ('Ecobici', Icons.pedal_bike),
+  static const _buttons = {
+    TransitLayer.buses: ('Colectivos', ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
+    TransitLayer.subway: ('Subte', ToggleTextButtonCustomization(borderColor: Color(0xFF7B1FA2))),
+    TransitLayer.bikes: ('Ecobici', ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
   };
 
   @override
@@ -438,14 +439,12 @@ class _LayerChips extends StatelessWidget {
     return Wrap(
       spacing: 8,
       children: [
-        for (final MapEntry(key: layer, value: (label, icon)) in _labels.entries)
-          FilterChip(
-            avatar: Icon(icon, size: 18),
-            label: Text(label),
-            selected: active.contains(layer),
-            showCheckmark: false,
-            elevation: 2,
-            onSelected: (on) => onToggle(layer, on),
+        for (final MapEntry(key: layer, value: (text, customization)) in _buttons.entries)
+          ToggleTextButton(
+            text: text,
+            isActive: active.contains(layer),
+            onTap: () => onToggle(layer, !active.contains(layer)),
+            customization: customization,
           ),
       ],
     );
