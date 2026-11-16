@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
+import 'base_map.dart';
 import 'markers.dart';
 import 'sheets.dart';
 
@@ -244,12 +245,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               onPositionChanged: _onPositionChanged,
               onMapReady: _loadBuses,
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+              backgroundColor: BaseMap.backgroundFor(Theme.of(context).brightness),
             ),
             children: [
-              TileLayer(
-                urlTemplate: AppConfig.tileUrlTemplate,
-                userAgentPackageName: AppConfig.userAgentPackageName,
-              ),
+              const BaseMap(),
               if (_layers.contains(TransitLayer.subway))
                 PolylineLayer(
                   polylines: [
@@ -305,7 +304,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 ),
               if (_myLocation case final here?)
                 MarkerLayer(markers: [Marker(point: here, width: 22, height: 22, child: const UserLocationMarker())]),
-              const SimpleAttributionWidget(source: Text(AppConfig.tileAttribution)),
+              const SimpleAttributionWidget(source: Text(AppConfig.mapAttribution)),
             ],
           ),
           SafeArea(

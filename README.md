@@ -63,9 +63,11 @@ Tests: `flutter test` · Análisis: `flutter analyze`
 
 - **Alojar el backend con HTTPS** (Render, Fly.io, Railway…) y compilar con
   `--dart-define=API_BASE_URL=https://tu-backend`. En release, Android bloquea `http://`.
-- **Cambiar el proveedor de mapas.** Los tiles de openstreetmap.org no se pueden usar en apps
-  con mucho tráfico. Usá uno con plan para apps y pasalo con
-  `--dart-define=TILE_URL=...` y `--dart-define=TILE_ATTRIBUTION=...`.
+- **Mapa base:** tiles vectoriales de [OpenFreeMap](https://openfreemap.org/) (estilos Positron
+  y Dark), gratis, sin clave y con uso comercial permitido; ver
+  [ADR 0001](docs/adr/0001-mapa-base-vectorial-openfreemap.md). No tiene SLA: si hace falta, se
+  cambia de proveedor o se autoaloja con `--dart-define=MAP_STYLE_LIGHT=...`,
+  `MAP_STYLE_DARK=...` y `MAP_ATTRIBUTION=...`.
 - **Elegir el `applicationId` definitivo** (`com.smarttransport.smart_transport` en
   `app/android/app/build.gradle.kts`): no se puede cambiar después de publicar.
 - Ícono, firma de la app y política de privacidad (la app usa la ubicación).

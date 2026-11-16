@@ -39,6 +39,7 @@ dependencies:
   latlong2: ^0.10.1
   http: ^1.6.0
   geolocator: ^14.1.2
+  vector_map_tiles: 9.0.0-beta.13
 
 dev_dependencies:
   flutter_test:

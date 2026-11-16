@@ -11,19 +11,21 @@ class AppConfig {
     defaultValue: 'http://10.0.2.2:8080',
   );
 
-  /// Plantilla de tiles del mapa base. Los tiles de openstreetmap.org sirven para desarrollo,
-  /// pero su política no permite apps con mucho tráfico: antes de publicar, usá un proveedor
-  /// con plan para apps (MapTiler, Stadia Maps, Thunderforest, etc.) y pasalo por acá.
-  static const tileUrlTemplate = String.fromEnvironment(
-    'TILE_URL',
-    defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  /// Estilos del mapa base (formato Mapbox/MapLibre GL, tiles vectoriales). Por defecto
+  /// OpenFreeMap: gratis, sin clave y con uso comercial permitido (ver docs/adr/0001).
+  /// Positron en tema claro, Dark en tema oscuro.
+  static const mapStyleLight = String.fromEnvironment(
+    'MAP_STYLE_LIGHT',
+    defaultValue: 'https://tiles.openfreemap.org/styles/positron',
   );
 
-  static const tileAttribution = String.fromEnvironment(
-    'TILE_ATTRIBUTION',
-    defaultValue: '© OpenStreetMap contributors',
+  static const mapStyleDark = String.fromEnvironment(
+    'MAP_STYLE_DARK',
+    defaultValue: 'https://tiles.openfreemap.org/styles/dark',
   );
 
-  /// Identifica la app ante el servidor de tiles (lo exige la política de OSM).
-  static const userAgentPackageName = 'com.smarttransport.smart_transport';
+  static const mapAttribution = String.fromEnvironment(
+    'MAP_ATTRIBUTION',
+    defaultValue: 'OpenFreeMap © OpenMapTiles © OpenStreetMap contributors',
+  );
 }
