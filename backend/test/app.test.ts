@@ -1,0 +1,173 @@
+import assert from 'node:assert/strict';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { after, before, describe, it } from 'node:test';
+import { createHandler } from '../src/app.ts';
+import { TtlCache } from '../src/cache.ts';
+import { loadConfig } from '../src/config.ts';
+import { DemoSource } from '../src/demo.ts';
+import type { BikeSource, TransitSource } from '../src/sources.ts';
+import { UpstreamError } from '../src/upstream.ts';
+
+async function withServer(source: TransitSource & BikeSource) {
+  const server = createServer(createHandler({ transit: source, bikes: source }));
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const { port } = server.address() as AddressInfo;
+  const get = async (path: string) => {
+    const res = await fetch(`http://127.0.0.1:${port}${path}`);
+    return { status: res.status, body: (await res.json()) as Record<string, any> };
+  };
+  return { server, get };
+}
+
+describe('API HTTP en modo demo', () => {
+  let server: Server;
+  let get: Awaited<ReturnType<typeof withServer>>['get'];
+
+  before(async () => ({ server, get } = await withServer(new DemoSource())));
+  after(() => server.close());
+
+  it('/health informa el modo de cada fuente', async () => {
+    const { status, body } = await get('/health');
+    assert.equal(status, 200);
+    assert.deepEqual(body.modes, { transit: 'demo', bikes: 'demo' });
+  });
+
+  it('cada endpoint informa el modo de su fuente', async () => {
+    assert.equal((await get('/v1/ecobici/stations')).body.mode, 'demo');
+    assert.equal((await get('/v1/subway/lines')).body.mode, 'demo');
+  });
+
+  it('/v1/buses exige zona o línea', async () => {
+    assert.equal((await get('/v1/buses')).status, 400);
+    assert.equal((await get('/v1/buses?bbox=1,2,3')).status, 400);
+  });
+
+  it('/v1/buses filtra por zona', async () => {
+    const { status, body } = await get('/v1/buses?bbox=-34.7,-58.5,-34.5,-58.3');
+    assert.equal(status, 200);
+    assert.ok(body.vehicles.length > 0);
+    for (const v of body.vehicles) assert.ok(v.lat >= -34.7 && v.lat <= -34.5);
+  });
+
+  it('/v1/buses filtra por línea', async () => {
+    const { body } = await get('/v1/buses?line=60');
+    assert.ok(body.vehicles.length > 0);
+    assert.ok(body.vehicles.every((v: { line: string }) => v.line === '60'));
+  });
+
+  it('/v1/subway/lines y /v1/subway/arrivals usan las mismas claves de estación', async () => {
+    const lines = (await get('/v1/subway/lines')).body.lines;
+    const station = lines[0].stations[1].id;
+    const { status, body } = await get(`/v1/subway/arrivals?station=${encodeURIComponent(station)}`);
+    assert.equal(status, 200);
+    assert.ok(body.arrivals.length > 0);
+    assert.ok(body.arrivals.every((a: { stationId: string }) => a.stationId === station));
+  });
+
+  it('/v1/subway/arrivals sin station es 400', async () => {
+    assert.equal((await get('/v1/subway/arrivals')).status, 400);
+  });
+
+  it('/v1/ecobici/stations y /v1/subway/alerts', async () => {
+    assert.ok((await get('/v1/ecobici/stations')).body.stations.length > 0);
+    assert.ok(Array.isArray((await get('/v1/subway/alerts')).body.alerts));
+  });
+
+  it('404 en rutas desconocidas', async () => {
+    assert.equal((await get('/nada')).status, 404);
+  });
+});
+
+describe('errores de la API de origen', () => {
+  it('se responden como 502 sin filtrar detalles', async () => {
+    const failing = new DemoSource();
+    failing.bikeStations = () => Promise.reject(new UpstreamError('/ecobici respondió 401', 401));
+    const { server, get } = await withServer(failing);
+    try {
+      const { status, body } = await get('/v1/ecobici/stations');
+      assert.equal(status, 502);
+      assert.equal(body.error, 'La API Transporte no respondió');
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('TtlCache', () => {
+  it('reutiliza el valor hasta que vence', async () => {
+    let now = 0;
+    let calls = 0;
+    const cache = new TtlCache(() => now);
+    const load = async () => ++calls;
+    assert.equal(await cache.get('k', 100, load), 1);
+    assert.equal(await cache.get('k', 100, load), 1);
+    now = 101;
+    assert.equal(await cache.get('k', 100, load), 2);
+  });
+
+  it('comparte pedidos simultáneos', async () => {
+    let calls = 0;
+    const cache = new TtlCache();
+    const load = () => new Promise<number>((r) => setTimeout(() => r(++calls), 10));
+    const results = await Promise.all([cache.get('k', 1000, load), cache.get('k', 1000, load)]);
+    assert.deepEqual(results, [1, 1]);
+  });
+
+  it('si falla la recarga devuelve el valor vencido', async () => {
+    let now = 0;
+    const cache = new TtlCache(() => now);
+    await cache.get('k', 10, async () => 'viejo');
+    now = 20;
+    assert.equal(await cache.get('k', 10, () => Promise.reject(new Error('caída'))), 'viejo');
+  });
+
+  it('sin valor previo propaga el error', async () => {
+    const cache = new TtlCache();
+    await assert.rejects(cache.get('k', 10, () => Promise.reject(new Error('caída'))));
+  });
+});
+
+describe('loadConfig', () => {
+  it('sin credenciales queda en demo', () => {
+    assert.equal(loadConfig({}).credentials, null);
+    assert.equal(loadConfig({ TRANSPORTE_CLIENT_ID: 'x', TRANSPORTE_CLIENT_SECRET: '  ' }).credentials, null);
+  });
+
+  it('con credenciales las toma', () => {
+    const c = loadConfig({ TRANSPORTE_CLIENT_ID: ' id ', TRANSPORTE_CLIENT_SECRET: 'sec', PORT: '3000' });
+    assert.deepEqual(c.credentials, { clientId: 'id', clientSecret: 'sec' });
+    assert.equal(c.port, 3000);
+  });
+});
+
+describe('fuentes mixtas', () => {
+  it('Ecobici en vivo y colectivos/subte en demo', async () => {
+    const demo = new DemoSource();
+    const liveBikes = { mode: 'live' as const, bikeStations: () => demo.bikeStations() };
+    const server = createServer(createHandler({ transit: demo, bikes: liveBikes }));
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const get = (p: string) => fetch(`http://127.0.0.1:${port}${p}`).then((r) => r.json() as Promise<Record<string, any>>);
+      assert.equal((await get('/v1/ecobici/stations')).mode, 'live');
+      assert.equal((await get('/v1/buses?line=60')).mode, 'demo');
+      assert.deepEqual((await get('/health')).modes, { transit: 'demo', bikes: 'live' });
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('loadConfig: Ecobici', () => {
+  it('por defecto usa el feed GBFS público', () => {
+    const c = loadConfig({});
+    assert.equal(c.ecobici.source, 'live');
+    assert.match(c.ecobici.discoveryUrl, /publicbikesystem\.net\/.*gbfs\.json$/);
+  });
+
+  it('ECOBICI_SOURCE=demo y valores inválidos', () => {
+    assert.equal(loadConfig({ ECOBICI_SOURCE: 'demo' }).ecobici.source, 'demo');
+    assert.throws(() => loadConfig({ ECOBICI_SOURCE: 'otro' }));
+  });
+});

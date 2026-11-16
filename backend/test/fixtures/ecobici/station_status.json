@@ -1,0 +1,42 @@
+{
+ "last_updated": 1794765216,
+ "ttl": 7,
+ "data": {
+  "stations": [
+   {
+    "station_id": "2",
+    "num_bikes_available": 3,
+    "num_bikes_disabled": 2,
+    "is_charging_station": false,
+    "status": "IN_SERVICE",
+    "traffic": null,
+    "num_docks_available": 34,
+    "num_docks_disabled": 1,
+    "last_reported": 1794765200,
+    "is_installed": true,
+    "is_renting": true,
+    "is_returning": true,
+    "vehicle_docks_available": [
+     {
+      "vehicle_type_ids": [
+       "ICONIC",
+       "FIT"
+      ],
+      "count": 34
+     }
+    ],
+    "vehicle_types_available": [
+     {
+      "vehicle_type_id": "FIT",
+      "count": 3
+     },
+     {
+      "vehicle_type_id": "ICONIC",
+      "count": 0
+     }
+    ]
+   }
+  ]
+ },
+ "version": "2.3"
+}

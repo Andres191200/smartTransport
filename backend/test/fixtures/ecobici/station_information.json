@@ -1,0 +1,38 @@
+{
+ "last_updated": 1794765227,
+ "ttl": 17,
+ "data": {
+  "stations": [
+   {
+    "station_id": "2",
+    "external_id": "7dbf224d-df81-11ef-9840-060733a00d35",
+    "name": "002 - Retiro I",
+    "physical_configuration": "SMARTLITMAPFRAME",
+    "lat": -34.59242413,
+    "lon": -58.37470988999999,
+    "altitude": 0.0,
+    "address": "AV. Dr. José María Ramos Mejía 1300",
+    "post_code": "11111",
+    "capacity": 40,
+    "is_charging_station": false,
+    "geofenced_capacity": 0,
+    "rental_methods": [
+     "key",
+     "transitcard",
+     "phone"
+    ],
+    "is_virtual_station": false,
+    "groups": [
+     "RETIRO"
+    ],
+    "obcn": "",
+    "short_name": "",
+    "nearby_distance": 1000.0,
+    "_bluetooth_id": "",
+    "_ride_code_support": true,
+    "rental_uris": {}
+   }
+  ]
+ },
+ "version": "2.3"
+}

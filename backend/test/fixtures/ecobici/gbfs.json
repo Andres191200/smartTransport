@@ -1,0 +1,151 @@
+{
+ "last_updated": 1794765242,
+ "ttl": 30,
+ "data": {
+  "pt": {
+   "feeds": [
+    {
+     "name": "gbfs_versions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/gbfs_versions"
+    },
+    {
+     "name": "geofencing_zones",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/pt/geofencing_zones"
+    },
+    {
+     "name": "station_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/pt/station_information"
+    },
+    {
+     "name": "station_status",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/pt/station_status"
+    },
+    {
+     "name": "system_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/pt/system_information"
+    },
+    {
+     "name": "system_pricing_plans",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/pt/system_pricing_plans"
+    },
+    {
+     "name": "system_regions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/pt/system_regions"
+    },
+    {
+     "name": "vehicle_types",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/pt/vehicle_types"
+    }
+   ]
+  },
+  "en": {
+   "feeds": [
+    {
+     "name": "gbfs_versions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/gbfs_versions"
+    },
+    {
+     "name": "geofencing_zones",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/en/geofencing_zones"
+    },
+    {
+     "name": "station_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/en/station_information"
+    },
+    {
+     "name": "station_status",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/en/station_status"
+    },
+    {
+     "name": "system_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/en/system_information"
+    },
+    {
+     "name": "system_pricing_plans",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/en/system_pricing_plans"
+    },
+    {
+     "name": "system_regions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/en/system_regions"
+    },
+    {
+     "name": "vehicle_types",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/en/vehicle_types"
+    }
+   ]
+  },
+  "nl": {
+   "feeds": [
+    {
+     "name": "gbfs_versions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/gbfs_versions"
+    },
+    {
+     "name": "geofencing_zones",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/nl/geofencing_zones"
+    },
+    {
+     "name": "station_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/nl/station_information"
+    },
+    {
+     "name": "station_status",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/nl/station_status"
+    },
+    {
+     "name": "system_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/nl/system_information"
+    },
+    {
+     "name": "system_pricing_plans",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/nl/system_pricing_plans"
+    },
+    {
+     "name": "system_regions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/nl/system_regions"
+    },
+    {
+     "name": "vehicle_types",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/nl/vehicle_types"
+    }
+   ]
+  },
+  "es": {
+   "feeds": [
+    {
+     "name": "gbfs_versions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/gbfs_versions"
+    },
+    {
+     "name": "geofencing_zones",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/es/geofencing_zones"
+    },
+    {
+     "name": "station_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/es/station_information"
+    },
+    {
+     "name": "station_status",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/es/station_status"
+    },
+    {
+     "name": "system_information",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/es/system_information"
+    },
+    {
+     "name": "system_pricing_plans",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/es/system_pricing_plans"
+    },
+    {
+     "name": "system_regions",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/es/system_regions"
+    },
+    {
+     "name": "vehicle_types",
+     "url": "https://buenosaires.publicbikesystem.net/customer/gbfs/v2/es/vehicle_types"
+    }
+   ]
+  }
+ },
+ "version": "2.3"
+}
