@@ -106,20 +106,6 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('elegir Colectivo guarda el Medio y, por ahora, saltea la pantalla de sus Líneas', (tester) async {
-    await openPorPrimeraVez(tester);
-    await tocarMedio(tester, 'Colectivo');
-    await continuar(tester);
-    expect(pantallaDeUbicacion, findsOneWidget);
-    await continuar(tester);
-
-    expect(find.text('Agregar líneas'), findsOneWidget);
-    expect(activo(tester, 'Ecobici'), isFalse);
-    await openMisLineas(tester);
-    expect(find.byTooltip('Agregar línea de Colectivo'), findsOneWidget);
-    expect(find.byTooltip('Agregar línea de Subte'), findsNothing);
-  });
-
   testWidgets('"Saltar" deja el mapa vacío y Ecobici apagada; las Líneas se agregan desde Mis líneas',
       (tester) async {
     final semantics = tester.ensureSemantics();

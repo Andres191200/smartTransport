@@ -1,12 +1,15 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../data/catalogo_de_colectivos.dart';
 import '../data/lineas_de_subte.dart';
 import '../data/permiso_de_ubicacion.dart';
+import '../data/transit_api.dart';
 import '../settings/mis_lineas.dart';
+import 'buscador_de_lineas.dart';
 import 'lineas_comun.dart';
 
 /// Las pantallas del Onboarding, en orden. Las de Líneas aparecen solo si se eligió su Medio.
-enum _Paso { medios, lineasDeSubte, ubicacion }
+enum _Paso { medios, lineasDeColectivo, lineasDeSubte, ubicacion }
 
 /// El Onboarding: la primera vez que se abre la app, el usuario elige sus Medios y sus Líneas, y
 /// se le explica el permiso de ubicación antes de pedirlo.
@@ -14,8 +17,15 @@ enum _Paso { medios, lineasDeSubte, ubicacion }
 /// Lo elegido vive en esta pantalla y se guarda en [MisLineas] recién al terminar: si se cierra
 /// la app a la mitad, la próxima vez empieza de nuevo. Al guardarlo, la app pasa al mapa.
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key, required this.misLineas, required this.pedirPermisoDeUbicacion});
+  const OnboardingScreen({
+    super.key,
+    required this.api,
+    required this.misLineas,
+    required this.pedirPermisoDeUbicacion,
+  });
 
+  /// Para el catálogo de Colectivo de la pantalla de Líneas de Colectivo.
+  final TransitApi api;
   final MisLineas misLineas;
   final PedirPermisoDeUbicacion pedirPermisoDeUbicacion;
 
@@ -31,12 +41,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   var _paso = _Paso.medios;
 
+  /// El catálogo de Colectivo se pide al llegar a la pantalla de Líneas de Colectivo.
+  late final _catalogo = CatalogoDeColectivos(widget.api);
+
   /// Mientras se pide el permiso y se guarda, los botones no hacen nada (evita guardar dos veces).
   var _terminando = false;
 
-  // TODO(#14): la pantalla de Líneas de Colectivo, antes de la de Subte.
   List<_Paso> get _pasos => [
         _Paso.medios,
+        if (_medios.contains(Medio.colectivo)) _Paso.lineasDeColectivo,
         if (_medios.contains(Medio.subte)) _Paso.lineasDeSubte,
         _Paso.ubicacion,
       ];
@@ -54,6 +67,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         if (!_lineas.remove(linea)) _lineas.add(linea);
       });
 
+  @override
+  void dispose() {
+    _catalogo.dispose();
+    super.dispose();
+  }
+
   void _siguiente() {
     final pasos = _pasos;
     setState(() => _paso = pasos[pasos.indexOf(_paso) + 1]);
@@ -63,6 +82,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final pasos = _pasos;
     setState(() => _paso = pasos[pasos.indexOf(_paso) - 1]);
   }
+
+  /// El botón de una pantalla de Líneas: "Prefiero hacerlo después" mientras no se eligió ninguna
+  /// Línea de ese Medio, y "Continuar" apenas se elige una.
+  Widget _botonDeLineas(Medio medio) => _lineas.any((l) => l.medio == medio)
+      ? FilledButton(onPressed: _siguiente, child: const Text('Continuar'))
+      : OutlinedButton(onPressed: _siguiente, child: const Text('Prefiero hacerlo después'));
 
   /// La última pantalla: pide el permiso (el resultado no importa: sin ubicación la app funciona
   /// igual) y guarda lo elegido.
@@ -88,11 +113,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           _ElegirMedios(elegidos: _medios, onAlternar: _alternarMedio),
           FilledButton(onPressed: _medios.isEmpty ? null : _siguiente, child: const Text('Continuar')),
         ),
+      _Paso.lineasDeColectivo => (
+          _ElegirLineasDeColectivo(
+            catalogo: _catalogo,
+            misLineas: widget.misLineas,
+            elegidas: _lineas,
+            onAlternar: _alternarLinea,
+          ),
+          _botonDeLineas(Medio.colectivo),
+        ),
       _Paso.lineasDeSubte => (
           _ElegirLineasDeSubte(elegidas: _lineas, onAlternar: _alternarLinea),
-          _lineas.any((l) => l.medio == Medio.subte)
-              ? FilledButton(onPressed: _siguiente, child: const Text('Continuar'))
-              : OutlinedButton(onPressed: _siguiente, child: const Text('Prefiero hacerlo después')),
+          _botonDeLineas(Medio.subte),
         ),
       _Paso.ubicacion => (
           const _ExplicarUbicacion(),
@@ -121,10 +153,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                  child: contenido,
-                ),
+                // La pantalla de Colectivo tiene su propia lista de resultados, que se desliza sola.
+                child: _paso == _Paso.lineasDeColectivo
+                    ? Padding(padding: const EdgeInsets.fromLTRB(24, 8, 24, 0), child: contenido)
+                    : SingleChildScrollView(padding: const EdgeInsets.fromLTRB(24, 8, 24, 24), child: contenido),
               ),
               _PuntosDeProgreso(paso: pasos.indexOf(_paso), total: pasos.length),
               Padding(padding: const EdgeInsets.fromLTRB(24, 16, 24, 24), child: boton),
@@ -227,6 +259,104 @@ class _CardDeMedio extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Buscador de Líneas de Colectivo, en selección múltiple. Arriba quedan las elegidas, en una fila
+/// que se desliza, para verlas aunque la búsqueda cambie. Elegir una Línea incluye todos sus Ramales.
+class _ElegirLineasDeColectivo extends StatefulWidget {
+  const _ElegirLineasDeColectivo({
+    required this.catalogo,
+    required this.misLineas,
+    required this.elegidas,
+    required this.onAlternar,
+  });
+
+  final CatalogoDeColectivos catalogo;
+  final MisLineas misLineas;
+  final List<Linea> elegidas;
+  final ValueChanged<Linea> onAlternar;
+
+  @override
+  State<_ElegirLineasDeColectivo> createState() => _ElegirLineasDeColectivoState();
+}
+
+class _ElegirLineasDeColectivoState extends State<_ElegirLineasDeColectivo> {
+  var _consulta = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarCatalogo();
+  }
+
+  Future<void> _cargarCatalogo() => cargarCatalogo(widget.catalogo);
+
+  @override
+  Widget build(BuildContext context) {
+    final elegidas = [for (final l in widget.elegidas) if (l.medio == Medio.colectivo) l];
+    // Con el teclado abierto, en un teléfono chico no entra todo: el encabezado ya se leyó y deja
+    // lugar a los resultados.
+    final tecladoAbierto = MediaQuery.viewInsetsOf(context).bottom > 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!tecladoAbierto)
+          const _Encabezado(
+            titulo: '¿Qué líneas de Colectivo usás?',
+            texto: 'Buscalas por su número y marcá todas las que quieras: el mapa va a mostrar sus colectivos '
+                'en vivo, de todos sus ramales.',
+          ),
+        if (elegidas.isNotEmpty)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                for (final linea in elegidas)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: InputChip(
+                      avatar: Icon(linea.medio.icono),
+                      label: Text(linea.nombre),
+                      deleteButtonTooltipMessage: 'Quitar ${linea.nombre}',
+                      onDeleted: () => widget.onAlternar(linea),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        TextField(
+          textInputAction: TextInputAction.search,
+          textCapitalization: TextCapitalization.characters,
+          decoration: const InputDecoration(
+            hintText: 'Buscar línea de Colectivo',
+            prefixIcon: Icon(Icons.search),
+            border: OutlineInputBorder(),
+          ),
+          onChanged: (value) => setState(() => _consulta = value),
+        ),
+        Expanded(child: ListenableBuilder(listenable: widget.catalogo, builder: (context, _) => _resultados())),
+      ],
+    );
+  }
+
+  Widget _resultados() {
+    final catalogo = widget.catalogo;
+    if (!catalogo.cargado) return CatalogoNoDisponible(catalogo: catalogo, onReintentar: _cargarCatalogo);
+    final lineas = buscarLineas(_consulta, medios: {Medio.colectivo}, colectivos: [for (final l in catalogo.lineas) l.id]);
+    if (lineas.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text('Ninguna línea de Colectivo coincide con "${_consulta.trim()}".', textAlign: TextAlign.center),
+      );
+    }
+    return ResultadosDeBusqueda(
+      lineas: lineas,
+      misLineas: widget.misLineas,
+      seleccionadas: widget.elegidas.toSet(),
+      onElegir: widget.onAlternar,
     );
   }
 }

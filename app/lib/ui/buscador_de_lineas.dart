@@ -6,9 +6,10 @@ import '../data/transit_api.dart';
 import '../settings/mis_lineas.dart';
 import 'lineas_comun.dart';
 
-// El buscador de Líneas: lo usan el mapa (tocar un resultado abre su ficha) y el "+" de la
-// pantalla Mis líneas (tocar un resultado lo agrega). Busca en las Líneas de Subte y en el catálogo
-// de Colectivo.
+// El buscador de Líneas: lo usan el mapa (tocar un resultado abre su ficha), el "+" de la
+// pantalla Mis líneas (tocar un resultado lo agrega) y la pantalla de Líneas de Colectivo del
+// Onboarding (selección múltiple: tocar un resultado lo marca o lo desmarca). Busca en las Líneas
+// de Subte y en el catálogo de Colectivo.
 
 /// Los Medios en los que se puede buscar (Ecobici no tiene Líneas).
 const mediosBuscables = {Medio.colectivo, Medio.subte};
@@ -45,6 +46,9 @@ String _normalizar(String text) => text
 
 /// La lista de resultados: cada Línea con el ícono de su Medio y, si ya está en Mis líneas, el
 /// badge "✓ Ya agregada".
+///
+/// Con [seleccionadas] es de selección múltiple: cada resultado muestra si está marcado y tocarlo
+/// llama a [onElegir] para marcarlo o desmarcarlo.
 class ResultadosDeBusqueda extends StatelessWidget {
   const ResultadosDeBusqueda({
     super.key,
@@ -52,6 +56,7 @@ class ResultadosDeBusqueda extends StatelessWidget {
     required this.misLineas,
     required this.onElegir,
     this.agregadasSeEligen = true,
+    this.seleccionadas,
   });
 
   final List<Linea> lineas;
@@ -61,6 +66,11 @@ class ResultadosDeBusqueda extends StatelessWidget {
   /// Si se pueden tocar las Líneas que ya están en Mis líneas (en el mapa abren su ficha; para
   /// agregar no tiene sentido elegirlas).
   final bool agregadasSeEligen;
+
+  /// Las Líneas marcadas, en selección múltiple; null si tocar un resultado lo elige y listo. En
+  /// selección múltiple no se muestra "Ya agregada": lo que cuenta es lo marcado (en el Onboarding,
+  /// lo marcado reemplaza a Mis líneas).
+  final Set<Linea>? seleccionadas;
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +87,19 @@ class ResultadosDeBusqueda extends StatelessWidget {
   }
 
   Widget _resultado(Linea linea) {
+    if (seleccionadas case final seleccionadas?) {
+      final marcada = seleccionadas.contains(linea);
+      return Semantics(
+        checked: marcada,
+        child: ListTile(
+          leading: Icon(linea.medio.icono, semanticLabel: linea.medio.nombre),
+          title: Text(linea.nombre),
+          trailing: Icon(marcada ? Icons.check_circle : Icons.circle_outlined),
+          selected: marcada,
+          onTap: () => onElegir(linea),
+        ),
+      );
+    }
     final agregada = misLineas.contiene(linea);
     return ListTile(
       leading: Icon(linea.medio.icono, semanticLabel: linea.medio.nombre),
@@ -140,14 +163,8 @@ class _AgregarLineaScreenState extends State<AgregarLineaScreen> {
   }
 
   /// Si el catálogo de Colectivo no llegó (p. ej. sin conexión al abrir el mapa), se pide de nuevo.
-  /// El error queda en el catálogo y se muestra en pantalla.
   Future<void> _cargarCatalogo() async {
-    if (widget.medio != Medio.colectivo) return;
-    try {
-      await widget.catalogo.cargar();
-    } on ApiException {
-      // Se muestra con el botón para reintentar.
-    }
+    if (widget.medio == Medio.colectivo) await cargarCatalogo(widget.catalogo);
   }
 
   @override
@@ -173,18 +190,7 @@ class _AgregarLineaScreenState extends State<AgregarLineaScreen> {
     final catalogo = widget.catalogo;
     final lineas = buscarLineas(_consulta, medios: {widget.medio}, colectivos: [for (final l in catalogo.lineas) l.id]);
     if (widget.medio == Medio.colectivo && !catalogo.cargado) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: catalogo.error == null
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(catalogo.error!, textAlign: TextAlign.center),
-                  TextButton(onPressed: _cargarCatalogo, child: const Text('Reintentar')),
-                ],
-              ),
-      );
+      return CatalogoNoDisponible(catalogo: catalogo, onReintentar: _cargarCatalogo);
     }
     if (lineas.isEmpty) {
       return Padding(
@@ -200,6 +206,41 @@ class _AgregarLineaScreenState extends State<AgregarLineaScreen> {
       misLineas: widget.misLineas,
       agregadasSeEligen: false,
       onElegir: (linea) => Navigator.pop(context, linea),
+    );
+  }
+}
+
+/// Pide el catálogo de Colectivo si todavía no llegó. Si falla, el error queda en el catálogo y lo
+/// muestra [CatalogoNoDisponible], con el botón para reintentar.
+Future<void> cargarCatalogo(CatalogoDeColectivos catalogo) async {
+  try {
+    await catalogo.cargar();
+  } on ApiException {
+    // Se muestra en pantalla.
+  }
+}
+
+/// Lo que se ve en lugar de los resultados de Colectivo mientras el catálogo no llegó: una ruedita
+/// o, si falló, el error con "Reintentar".
+class CatalogoNoDisponible extends StatelessWidget {
+  const CatalogoNoDisponible({super.key, required this.catalogo, required this.onReintentar});
+
+  final CatalogoDeColectivos catalogo;
+  final VoidCallback onReintentar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: catalogo.error == null
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(catalogo.error!, textAlign: TextAlign.center),
+                TextButton(onPressed: onReintentar, child: const Text('Reintentar')),
+              ],
+            ),
     );
   }
 }

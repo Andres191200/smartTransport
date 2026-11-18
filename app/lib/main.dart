@@ -53,7 +53,7 @@ class SmartTransportApp extends StatelessWidget {
           listenable: misLineas,
           builder: (context, _) => misLineas.onboardingCompletado
               ? MapScreen(api: api, theme: theme, misLineas: misLineas, baseMap: baseMap)
-              : OnboardingScreen(misLineas: misLineas, pedirPermisoDeUbicacion: pedirPermisoDeUbicacion),
+              : OnboardingScreen(api: api, misLineas: misLineas, pedirPermisoDeUbicacion: pedirPermisoDeUbicacion),
         ),
       ),
     );
