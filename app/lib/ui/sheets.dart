@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../data/lineas_de_subte.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
 import 'markers.dart';
+import 'mis_lineas_screen.dart' show CirculoDeSubte;
 
 /// "en 3 min", "llegando", "hace un momento"...
 String formatEta(DateTime when, DateTime now) {
@@ -210,6 +212,30 @@ class _SubwayStationSheetState extends State<SubwayStationSheet> {
             ),
             const SizedBox(height: 12),
           ],
+      ],
+    );
+  }
+}
+
+/// Ficha de una Línea de Subte de Mis líneas: la Línea, sus Terminales y el botón "Eliminar".
+class FichaDeLineaDeSubte extends StatelessWidget {
+  const FichaDeLineaDeSubte({super.key, required this.linea, required this.recorrido, required this.onEliminar});
+
+  final LineaDeSubte linea;
+
+  /// La Línea según el backend, de donde salen las Terminales. Null si todavía no llegó.
+  final SubwayLine? recorrido;
+  final VoidCallback onEliminar;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SheetFrame(
+      leading: ExcludeSemantics(child: CirculoDeSubte(linea: linea)),
+      title: linea.nombre,
+      children: [
+        if (recorrido?.terminales case (final desde, final hasta)) _InfoRow(icon: Icons.route, text: '$desde – $hasta'),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(onPressed: onEliminar, icon: const Icon(Icons.delete_outline), label: const Text('Eliminar')),
       ],
     );
   }

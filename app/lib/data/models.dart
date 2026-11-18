@@ -98,6 +98,10 @@ class SubwayLine {
   final Color textColor;
   final List<LatLng> path;
   final List<SubwayStation> stations;
+
+  /// Las dos Terminales: la primera y la última estación. Null si la Línea no trae estaciones.
+  (String, String)? get terminales =>
+      stations.length < 2 ? null : (stations.first.name, stations.last.name);
 }
 
 class SubwayArrival {

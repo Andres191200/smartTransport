@@ -116,19 +116,22 @@ class _GrupoSubte extends StatelessWidget {
     if (elegida != null) await misLineas.agregar(elegida.linea);
   }
 
-  Future<void> _eliminar(BuildContext context, LineaDeSubte linea) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final eliminada = await misLineas.eliminar(linea.linea);
-    if (eliminada == null) return;
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text('Eliminaste ${linea.conArticulo}'),
-        // Se va solo, como cualquier aviso: deshacer es una oportunidad, no una pregunta.
-        persist: false,
-        action: SnackBarAction(label: 'Deshacer', onPressed: () => misLineas.deshacer(eliminada)),
-      ));
-  }
+  Future<void> _eliminar(BuildContext context, LineaDeSubte linea) =>
+      eliminarConDeshacer(ScaffoldMessenger.of(context), misLineas, linea);
+}
+
+/// Saca la Línea de Mis líneas y muestra "Eliminaste la D · Deshacer".
+Future<void> eliminarConDeshacer(ScaffoldMessengerState messenger, MisLineas misLineas, LineaDeSubte linea) async {
+  final eliminada = await misLineas.eliminar(linea.linea);
+  if (eliminada == null) return;
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: Text('Eliminaste ${linea.conArticulo}'),
+      // Se va solo, como cualquier aviso: deshacer es una oportunidad, no una pregunta.
+      persist: false,
+      action: SnackBarAction(label: 'Deshacer', onPressed: () => misLineas.deshacer(eliminada)),
+    ));
 }
 
 /// Ecobici no tiene Líneas: su grupo solo decide si las estaciones se muestran al abrir la app,
