@@ -6,7 +6,7 @@ import '../data/lineas_de_subte.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
 import 'markers.dart';
-import 'mis_lineas_screen.dart' show CirculoDeSubte;
+import 'lineas_comun.dart' show CirculoDeSubte;
 
 /// "en 3 min", "llegando", "hace un momento"...
 String formatEta(DateTime when, DateTime now) {
@@ -23,11 +23,18 @@ String formatAgo(DateTime when, DateTime now) {
 }
 
 class _SheetFrame extends StatelessWidget {
-  const _SheetFrame({required this.leading, required this.title, this.subtitle, required this.children});
+  const _SheetFrame({
+    required this.leading,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    required this.children,
+  });
 
   final Widget leading;
   final String title;
   final String? subtitle;
+  final Widget? trailing;
   final List<Widget> children;
 
   @override
@@ -54,6 +61,7 @@ class _SheetFrame extends StatelessWidget {
                     ],
                   ),
                 ),
+                ?trailing,
               ],
             ),
             const SizedBox(height: 16),
@@ -217,25 +225,43 @@ class _SubwayStationSheetState extends State<SubwayStationSheet> {
   }
 }
 
-/// Ficha de una Línea de Subte de Mis líneas: la Línea, sus Terminales y el botón "Eliminar".
+/// Ficha de una Línea de Subte: la Línea, sus Terminales y el botón "Agregar a Mis líneas" o
+/// "Eliminar", según si ya está en Mis líneas.
 class FichaDeLineaDeSubte extends StatelessWidget {
-  const FichaDeLineaDeSubte({super.key, required this.linea, required this.recorrido, required this.onEliminar});
+  const FichaDeLineaDeSubte({
+    super.key,
+    required this.linea,
+    required this.subwayLine,
+    required this.agregada,
+    required this.onAgregar,
+    required this.onEliminar,
+    required this.onCerrar,
+  });
 
   final LineaDeSubte linea;
 
   /// La Línea según el backend, de donde salen las Terminales. Null si todavía no llegó.
-  final SubwayLine? recorrido;
+  final SubwayLine? subwayLine;
+
+  /// Si la Línea está en Mis líneas.
+  final bool agregada;
+  final VoidCallback onAgregar;
   final VoidCallback onEliminar;
+  final VoidCallback onCerrar;
 
   @override
   Widget build(BuildContext context) {
     return _SheetFrame(
       leading: ExcludeSemantics(child: CirculoDeSubte(linea: linea)),
       title: linea.nombre,
+      trailing: IconButton(tooltip: 'Cerrar', icon: const Icon(Icons.close), onPressed: onCerrar),
       children: [
-        if (recorrido?.terminales case (final desde, final hasta)) _InfoRow(icon: Icons.route, text: '$desde – $hasta'),
+        if (subwayLine?.terminales case (final desde, final hasta)) _InfoRow(icon: Icons.route, text: '$desde – $hasta'),
         const SizedBox(height: 12),
-        OutlinedButton.icon(onPressed: onEliminar, icon: const Icon(Icons.delete_outline), label: const Text('Eliminar')),
+        if (agregada)
+          OutlinedButton.icon(onPressed: onEliminar, icon: const Icon(Icons.delete_outline), label: const Text('Eliminar'))
+        else
+          FilledButton.icon(onPressed: onAgregar, icon: const Icon(Icons.add), label: const Text('Agregar a Mis líneas')),
       ],
     );
   }

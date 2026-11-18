@@ -34,6 +34,9 @@ class AppHarness {
   /// Cuerpo JSON que devuelve el backend falso para cada ruta. Se puede cambiar entre aperturas.
   final Map<String, Object> responses;
 
+  /// Rutas que tardan en responder: el backend falso espera a que se complete el Future.
+  final Map<String, Future<void>> delays = {};
+
   /// Pedidos que la app le hizo al backend, en orden.
   final List<Uri> requests = [];
 
@@ -44,6 +47,7 @@ class AppHarness {
 
   Future<http.Response> _handle(http.Request request) async {
     requests.add(request.url);
+    await delays[request.url.path];
     final body = responses[request.url.path];
     if (body == null) {
       return http.Response(jsonEncode({'error': 'Ruta desconocida: ${request.url.path}'}), 404);

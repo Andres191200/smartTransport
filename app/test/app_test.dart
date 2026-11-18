@@ -8,7 +8,7 @@ void main() {
     final app = AppHarness();
     await app.open(tester);
 
-    expect(find.widgetWithText(TextField, 'Buscar línea de colectivo'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Buscar línea'), findsOneWidget);
     expect(find.byTooltip('Estado del subte'), findsOneWidget);
     expect(find.byTooltip('Mi ubicación'), findsOneWidget);
     expect(app.requests.map((u) => u.path), contains('/v1/subway/lines'));

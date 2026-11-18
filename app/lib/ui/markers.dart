@@ -56,6 +56,8 @@ class SubwayStationMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
+      // Cada estación se anuncia sola, aunque no se pueda tocar (las Terminales de la vista previa).
+      container: true,
       label: 'Estación ${station.name}, línea ${line.name}',
       child: Container(
         decoration: BoxDecoration(
