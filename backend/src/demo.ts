@@ -2,7 +2,9 @@
 // Las coordenadas son aproximadas y hay pocas líneas/estaciones: alcanza para probar la app,
 // no para usarla de referencia. Con credenciales, el servidor usa LiveSource y esto no se carga.
 
-import type { Bus } from './adapters/buses.ts';
+import type { BusLine } from './adapters/bus-lines.ts';
+import { branchLine, type Bus } from './adapters/buses.ts';
+import type { LatLon } from './adapters/gtfs.ts';
 import type { BikeStation } from './adapters/ecobici.ts';
 import { stationKey, type ServiceAlert, type SubwayArrival, type SubwayLine } from './adapters/subway.ts';
 import type { BikeSource, TransitSource } from './sources.ts';
@@ -37,8 +39,59 @@ const DEMO_LINES: { id: string; name: string; color: string; stations: DemoStati
   },
 ];
 
-const DEMO_BUS_LINES = ['60', '152', '29', '39', '64', '17'];
-const CENTER = { lat: -34.6037, lon: -58.3816 }; // Obelisco
+// Ramales de colectivo con Terminales y Recorridos inventados pero plausibles. Los colectivos
+// simulados circulan por estos Recorridos, así que catálogo y vehículos son coherentes.
+type DemoBranch = { id: string; terminals: [string, string]; path: LatLon[] };
+
+const CONSTITUCION: LatLon = [-34.6277, -58.3815];
+const LA_BOCA: LatLon = [-34.6345, -58.3631];
+const PLAZA_DE_MAYO: LatLon = [-34.6083, -58.3712];
+const PLAZA_ITALIA: LatLon = [-34.5813, -58.421];
+const CHACARITA: LatLon = [-34.587, -58.4545];
+const BARRACAS: LatLon = [-34.645, -58.382];
+
+const DEMO_BUS_BRANCHES: DemoBranch[] = [
+  {
+    id: '60A',
+    terminals: ['Constitución', 'Escobar'],
+    path: [CONSTITUCION, [-34.6045, -58.3925], PLAZA_ITALIA, [-34.5617, -58.45], [-34.4708, -58.5286], [-34.3484, -58.7957]],
+  },
+  {
+    id: '60B',
+    terminals: ['Constitución', 'Tigre'],
+    path: [CONSTITUCION, [-34.6045, -58.3925], PLAZA_ITALIA, [-34.5617, -58.45], [-34.426, -58.5796]],
+  },
+  {
+    id: '152',
+    terminals: ['La Boca', 'Olivos'],
+    path: [LA_BOCA, PLAZA_DE_MAYO, [-34.5915, -58.3745], [-34.578, -58.413], [-34.51, -58.489]],
+  },
+  {
+    id: '29',
+    terminals: ['La Boca', 'Belgrano'],
+    path: [[-34.638, -58.362], PLAZA_DE_MAYO, [-34.5953, -58.3755], [-34.58, -58.4], [-34.56, -58.456]],
+  },
+  {
+    id: '39A',
+    terminals: ['Barracas', 'Chacarita'],
+    path: [BARRACAS, CONSTITUCION, [-34.6092, -58.3926], [-34.6035, -58.411], CHACARITA],
+  },
+  {
+    id: '39B',
+    terminals: ['Barracas', 'Belgrano'],
+    path: [BARRACAS, CONSTITUCION, [-34.6092, -58.3926], PLAZA_ITALIA, [-34.5627, -58.4565]],
+  },
+  {
+    id: '64',
+    terminals: ['La Boca', 'Chacarita'],
+    path: [LA_BOCA, PLAZA_DE_MAYO, [-34.609, -58.406], CHACARITA],
+  },
+  {
+    id: '17',
+    terminals: ['Barrio Mitre', 'Constitución'],
+    path: [[-34.556, -58.498], PLAZA_ITALIA, [-34.609, -58.406], CONSTITUCION],
+  },
+];
 
 const DEMO_BIKES: DemoStation[] = [
   ['Obelisco', -34.6033, -58.3812],
@@ -57,6 +110,21 @@ function rand(seed: number): number {
   return x - Math.floor(x);
 }
 
+/** Punto a una fracción (0 a 1) del largo de un Recorrido. */
+function pointAlong(path: LatLon[], fraction: number): LatLon {
+  const lengths = path.slice(1).map((p, i) => Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]));
+  let remaining = fraction * lengths.reduce((a, b) => a + b, 0);
+  for (const [i, length] of lengths.entries()) {
+    if (remaining <= length) {
+      const [a, b] = [path[i]!, path[i + 1]!];
+      const k = length ? remaining / length : 0;
+      return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+    }
+    remaining -= length;
+  }
+  return path.at(-1)!;
+}
+
 export class DemoSource implements TransitSource, BikeSource {
   readonly mode = 'demo' as const;
   #now: () => number;
@@ -69,24 +137,35 @@ export class DemoSource implements TransitSource, BikeSource {
     const t = this.#now() / 1000;
     const buses: Bus[] = [];
     for (let i = 0; i < 40; i++) {
-      const line = DEMO_BUS_LINES[i % DEMO_BUS_LINES.length]!;
-      // Cada colectivo da vueltas sobre una elipse alrededor del centro, a distinta velocidad.
-      const radius = 0.004 + rand(i) * 0.018;
-      const speed = (0.6 + rand(i + 100)) / 600;
-      const angle = rand(i + 200) * Math.PI * 2 + t * speed;
+      const branch = DEMO_BUS_BRANCHES[i % DEMO_BUS_BRANCHES.length]!;
+      // Cada colectivo va y vuelve por el Recorrido de su Ramal, a distinta velocidad.
+      const lap = (rand(i) * 2 + t / (1800 + rand(i + 100) * 1800)) % 2;
+      const directionId = lap < 1 ? 0 : 1;
+      const [lat, lon] = pointAlong(branch.path, directionId === 0 ? lap : 2 - lap);
       buses.push({
         id: `demo-${i}`,
-        lat: CENTER.lat + Math.sin(angle) * radius * 0.82,
-        lon: CENTER.lon + Math.cos(angle) * radius,
-        line,
-        headsign: i % 2 === 0 ? 'Ida (demo)' : 'Vuelta (demo)',
+        lat,
+        lon,
+        line: branch.id,
+        headsign: branch.terminals[directionId === 0 ? 1 : 0],
         agency: 'Empresa demo',
-        directionId: i % 2,
+        directionId,
         speedMps: 4 + rand(i + 300) * 8,
         timestamp: Math.floor(t),
       });
     }
     return buses;
+  }
+
+  async busLines(): Promise<BusLine[]> {
+    const lines = new Map<string, BusLine>();
+    for (const { id, terminals, path } of DEMO_BUS_BRANCHES) {
+      const lineId = branchLine(id);
+      let line = lines.get(lineId);
+      if (!line) lines.set(lineId, (line = { id: lineId, branches: [] }));
+      line.branches.push({ id, terminals, path });
+    }
+    return [...lines.values()].sort((a, b) => a.id.localeCompare(b.id, 'es', { numeric: true }));
   }
 
   async subwayLines(): Promise<SubwayLine[]> {

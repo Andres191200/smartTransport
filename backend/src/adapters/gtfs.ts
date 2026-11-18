@@ -18,7 +18,30 @@ const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 
 /** Parser CSV (RFC 4180): comillas, comas y saltos de línea dentro de comillas, BOM y CRLF. */
 export function parseCsv(text: string): CsvRow[] {
-  const rows: string[][] = [];
+  return [...csvRows(text)];
+}
+
+/**
+ * Como `parseCsv`, pero entrega las filas de a una: para archivos grandes (el `shapes.txt` de
+ * colectivos) se puede quedar solo con lo que hace falta sin armar todas las filas juntas.
+ */
+export function* csvRows(text: string): Generator<CsvRow> {
+  let keys: string[] | undefined;
+  for (const record of csvRecords(text)) {
+    if (record.length === 1 && record[0] === '') continue;
+    if (!keys) {
+      keys = record.map((h) => h.trim());
+      continue;
+    }
+    const obj: CsvRow = {};
+    keys.forEach((k, idx) => {
+      obj[k] = (record[idx] ?? '').trim();
+    });
+    yield obj;
+  }
+}
+
+function* csvRecords(text: string): Generator<string[]> {
   let row: string[] = [];
   let field = '';
   let inQuotes = false;
@@ -45,7 +68,7 @@ export function parseCsv(text: string): CsvRow[] {
     } else if (c === '\n' || c === '\r') {
       if (c === '\r' && src[i + 1] === '\n') i++;
       row.push(field);
-      rows.push(row);
+      yield row;
       row = [];
       field = '';
     } else {
@@ -54,17 +77,26 @@ export function parseCsv(text: string): CsvRow[] {
   }
   if (field !== '' || row.length > 0) {
     row.push(field);
-    rows.push(row);
+    yield row;
   }
+}
 
-  const [header, ...body] = rows.filter((r) => !(r.length === 1 && r[0] === ''));
-  if (!header) return [];
-  const keys = header.map((h) => h.trim());
-  return body.map((r) => {
-    const obj: CsvRow = {};
-    keys.forEach((k, idx) => {
-      obj[k] = (r[idx] ?? '').trim();
-    });
-    return obj;
-  });
+export type LatLon = [lat: number, lon: number];
+
+/**
+ * shapes.txt → { shape_id → puntos en orden de secuencia }.
+ * Con `only`, guarda solo esos shapes (el feed de colectivos trae miles y se usan pocos).
+ */
+export function readShapes(text: string, only?: ReadonlySet<string>): Map<string, LatLon[]> {
+  const byId = new Map<string, { seq: number; pt: LatLon }[]>();
+  for (const r of csvRows(text)) {
+    const id = r.shape_id ?? '';
+    if (only && !only.has(id)) continue;
+    let arr = byId.get(id);
+    if (!arr) byId.set(id, (arr = []));
+    arr.push({ seq: Number(r.shape_pt_sequence), pt: [Number(r.shape_pt_lat), Number(r.shape_pt_lon)] });
+  }
+  const out = new Map<string, LatLon[]>();
+  for (const [id, pts] of byId) out.set(id, pts.sort((a, b) => a.seq - b.seq).map((p) => p.pt));
+  return out;
 }

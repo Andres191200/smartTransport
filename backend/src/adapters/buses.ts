@@ -55,6 +55,15 @@ export function parseBusPositions(raw: unknown): Bus[] {
   return buses;
 }
 
+/**
+ * Línea a la que pertenece un Ramal: su número sin el sufijo de letras ("60A" → "60").
+ * Es la misma regla que `matchesLine`; un nombre sin número queda igual.
+ */
+export function branchLine(branch: string): string {
+  const name = branch.trim().toUpperCase();
+  return /^(.*\d)[A-Z]*$/.exec(name)?.[1] ?? name;
+}
+
 /** "60" coincide con "60", "60A", "60B"... pero no con "160" ni "600". */
 export function matchesLine(busLine: string, query: string): boolean {
   const line = busLine.toUpperCase();
@@ -67,12 +76,14 @@ export function inBox(bus: { lat: number; lon: number }, box: BoundingBox): bool
   return bus.lat >= box.minLat && bus.lat <= box.maxLat && bus.lon >= box.minLon && bus.lon <= box.maxLon;
 }
 
+/** Con `lines`, cada Línea incluye todos sus Ramales. */
 export function filterBuses(
   buses: Bus[],
-  opts: { box?: BoundingBox; line?: string; limit: number },
+  opts: { box?: BoundingBox; lines?: string[]; limit: number },
 ): { vehicles: Bus[]; truncated: boolean } {
+  const { box, lines } = opts;
   const matched = buses.filter(
-    (b) => (!opts.box || inBox(b, opts.box)) && (!opts.line || matchesLine(b.line, opts.line)),
+    (b) => (!box || inBox(b, box)) && (!lines || lines.some((line) => matchesLine(b.line, line))),
   );
   return { vehicles: matched.slice(0, opts.limit), truncated: matched.length > opts.limit };
 }

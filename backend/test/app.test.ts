@@ -40,6 +40,7 @@ describe('API HTTP en modo demo', () => {
 
   it('/v1/buses exige zona o línea', async () => {
     assert.equal((await get('/v1/buses')).status, 400);
+    assert.equal((await get('/v1/buses?line=,')).status, 400);
     assert.equal((await get('/v1/buses?bbox=1,2,3')).status, 400);
   });
 
@@ -53,7 +54,71 @@ describe('API HTTP en modo demo', () => {
   it('/v1/buses filtra por línea', async () => {
     const { body } = await get('/v1/buses?line=60');
     assert.ok(body.vehicles.length > 0);
-    assert.ok(body.vehicles.every((v: { line: string }) => v.line === '60'));
+    assert.ok(body.vehicles.every((v: { line: string }) => /^60[A-Z]*$/.test(v.line)));
+  });
+
+  it('/v1/buses con varias Líneas trae todos sus Ramales y nada de otras Líneas', async () => {
+    const { status, body } = await get('/v1/buses?line=60,152');
+    assert.equal(status, 200);
+    const lines = new Set(body.vehicles.map((v: { line: string }) => v.line));
+    assert.deepEqual([...lines].sort(), ['152', '60A', '60B']);
+    // También repitiendo el parámetro.
+    const repeated = (await get('/v1/buses?line=60&line=152')).body;
+    assert.equal(repeated.vehicles.length, body.vehicles.length);
+  });
+
+  it('/v1/buses con varias Líneas respeta el límite', async () => {
+    const { body } = await get('/v1/buses?line=60,152&limit=2');
+    assert.equal(body.vehicles.length, 2);
+    assert.equal(body.truncated, true);
+  });
+
+  it('/v1/buses/lines: catálogo de Líneas con sus Ramales y Terminales, sin Recorridos', async () => {
+    const { status, body } = await get('/v1/buses/lines');
+    assert.equal(status, 200);
+    assert.equal(body.mode, 'demo');
+    const sixty = body.lines.find((l: { id: string }) => l.id === '60');
+    assert.deepEqual(sixty, {
+      id: '60',
+      branches: [
+        { id: '60A', terminals: ['Constitución', 'Escobar'] },
+        { id: '60B', terminals: ['Constitución', 'Tigre'] },
+      ],
+    });
+    for (const line of body.lines) {
+      assert.ok(line.branches.length > 0);
+      for (const branch of line.branches) {
+        assert.equal(branch.terminals.length, 2);
+        assert.equal(branch.path, undefined);
+      }
+    }
+  });
+
+  it('el catálogo es coherente con los colectivos simulados', async () => {
+    const branches = new Set<string>(
+      (await get('/v1/buses/lines')).body.lines.flatMap((l: { branches: { id: string }[] }) => l.branches.map((b) => b.id)),
+    );
+    const buses = (await get('/v1/buses?bbox=-90,-180,90,180')).body.vehicles;
+    assert.ok(buses.length > 0);
+    for (const bus of buses) assert.ok(branches.has(bus.line), `${bus.line} no está en el catálogo`);
+  });
+
+  it('/v1/buses/paths: Recorridos de cada Ramal de una Línea', async () => {
+    const { status, body } = await get('/v1/buses/paths?line=60');
+    assert.equal(status, 200);
+    assert.equal(body.mode, 'demo');
+    assert.equal(body.line.id, '60');
+    assert.deepEqual(body.line.branches.map((b: { id: string }) => b.id), ['60A', '60B']);
+    for (const branch of body.line.branches) {
+      assert.equal(branch.terminals.length, 2);
+      assert.ok(branch.path.length > 1);
+      for (const [lat, lon] of branch.path) assert.ok(lat < -34 && lat > -35 && lon < -58 && lon > -59);
+    }
+  });
+
+  it('/v1/buses/paths sin line es 400 y con una Línea desconocida es 404', async () => {
+    assert.equal((await get('/v1/buses/paths')).status, 400);
+    assert.equal((await get('/v1/buses/paths?line=9999')).status, 404);
   });
 
   it('/v1/subway/lines y /v1/subway/arrivals usan las mismas claves de estación', async () => {

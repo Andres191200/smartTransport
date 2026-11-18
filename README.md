@@ -30,12 +30,16 @@ npm run dev               # http://localhost:8080
 **Sin credenciales, colectivos y subte arrancan en modo demo** (datos simulados), así que se
 puede desarrollar la app antes de tenerlas. **Ecobici siempre usa datos reales** del feed GBFS
 (cacheado según el `ttl` que informa el feed); con `ECOBICI_SOURCE=demo` se simula, para
-trabajar sin internet. `npm run check-api` verifica Ecobici aunque no haya credenciales.
+trabajar sin internet. `npm run check-api` verifica Ecobici aunque no haya credenciales; con
+credenciales también verifica colectivos, subte y el GTFS estático de colectivos (ruta, tamaño,
+archivos y columnas), del que sale el catálogo de Líneas.
 
 | Endpoint | Devuelve |
 |---|---|
 | `GET /v1/buses?bbox=minLat,minLon,maxLat,maxLon` | Colectivos en la zona (máx. 600) |
-| `GET /v1/buses?line=60` | Todos los colectivos de una línea (incluye ramales 60A, 60B…) |
+| `GET /v1/buses?line=60,152` | Todos los colectivos de una o varias Líneas, en toda la ciudad (cada Línea incluye sus Ramales 60A, 60B…; máx. 600) |
+| `GET /v1/buses/lines` | Catálogo de Líneas de Colectivo: cada Línea con sus Ramales y sus dos Terminales (sin Recorridos, para el buscador) |
+| `GET /v1/buses/paths?line=60` | Una Línea de Colectivo con el Recorrido de cada Ramal |
 | `GET /v1/subway/lines` | Líneas de subte con color, recorrido y estaciones |
 | `GET /v1/subway/arrivals?station=<id>` | Próximos trenes en una estación (id de `/lines`) |
 | `GET /v1/subway/alerts` | Avisos de servicio del subte |
