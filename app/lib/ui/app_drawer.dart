@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../data/catalogo_de_colectivos.dart';
 import '../settings/mis_lineas.dart';
 import '../settings/theme_controller.dart';
 import 'mis_lineas_screen.dart';
@@ -7,10 +8,11 @@ import 'mis_lineas_screen.dart';
 /// Menú lateral de la app: Mis líneas y el modo oscuro. Acá van a ir configuración,
 /// versión de la app y soporte.
 class AppDrawer extends StatelessWidget {
-  const AppDrawer({super.key, required this.theme, required this.misLineas});
+  const AppDrawer({super.key, required this.theme, required this.misLineas, required this.catalogo});
 
   final ThemeController theme;
   final MisLineas misLineas;
+  final CatalogoDeColectivos catalogo;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,7 @@ class AppDrawer extends StatelessWidget {
               onTap: () {
                 final navigator = Navigator.of(context);
                 navigator.pop(); // cierra el menú
-                navigator.push(MisLineasScreen.route(misLineas));
+                navigator.push(MisLineasScreen.route(misLineas, catalogo));
               },
             ),
             ListenableBuilder(

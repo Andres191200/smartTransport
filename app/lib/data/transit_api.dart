@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:latlong2/latlong.dart';
-
 import 'models.dart';
 
 class ApiException implements Exception {
@@ -28,23 +26,26 @@ class TransitApi {
   /// Capas que el backend está sirviendo con datos simulados (p. ej. colectivos y subte sin
   /// credenciales del GCBA, mientras Ecobici es real). Vacío = todo es real.
   List<String> get demoLayers => [
-        if (_demoPaths.contains('/v1/buses')) 'colectivos',
+        if (_demoPaths.any((p) => p.startsWith('/v1/buses'))) 'colectivos',
         if (_demoPaths.any((p) => p.startsWith('/v1/subway'))) 'subte',
         if (_demoPaths.contains('/v1/ecobici/stations')) 'Ecobici',
       ];
 
-  Future<BusesResult> buses({({LatLng southWest, LatLng northEast})? bounds, String? line}) async {
-    final query = <String, String>{
-      if (bounds != null)
-        'bbox': [
-          bounds.southWest.latitude,
-          bounds.southWest.longitude,
-          bounds.northEast.latitude,
-          bounds.northEast.longitude,
-        ].map((n) => n.toStringAsFixed(5)).join(','),
-      if (line != null && line.isNotEmpty) 'line': line,
-    };
-    return BusesResult.fromJson(await _get('/v1/buses', query));
+  /// Los colectivos en vivo de esas Líneas de Colectivo (todos sus Ramales), en toda la ciudad
+  /// y en un solo pedido.
+  Future<BusesResult> buses({required List<String> lines}) async =>
+      BusesResult.fromJson(await _get('/v1/buses', {'line': lines.join(',')}));
+
+  /// El catálogo de Líneas de Colectivo, con sus Ramales y Terminales pero sin los Recorridos.
+  Future<List<BusLine>> busLines() async {
+    final j = await _get('/v1/buses/lines');
+    return [for (final l in j['lines'] as List) BusLine.fromJson(l as Map<String, dynamic>)];
+  }
+
+  /// Una Línea de Colectivo con los Recorridos de todos sus Ramales.
+  Future<BusLine> busPaths(String line) async {
+    final j = await _get('/v1/buses/paths', {'line': line});
+    return BusLine.fromJson(j['line'] as Map<String, dynamic>);
   }
 
   Future<List<SubwayLine>> subwayLines() async {

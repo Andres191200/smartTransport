@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../data/lineas_de_subte.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
+import '../settings/mis_lineas.dart';
+import 'lineas_comun.dart' show IconoDeLinea, LineaUI;
 import 'markers.dart';
-import 'lineas_comun.dart' show CirculoDeSubte;
 
 /// "en 3 min", "llegando", "hace un momento"...
 String formatEta(DateTime when, DateTime now) {
@@ -225,23 +225,24 @@ class _SubwayStationSheetState extends State<SubwayStationSheet> {
   }
 }
 
-/// Ficha de una Línea de Subte: la Línea, sus Terminales y el botón "Agregar a Mis líneas" o
-/// "Eliminar", según si ya está en Mis líneas.
-class FichaDeLineaDeSubte extends StatelessWidget {
-  const FichaDeLineaDeSubte({
+/// Ficha de una Línea: la Línea, una fila por Recorrido con sus Terminales y el botón "Agregar a
+/// Mis líneas" o "Eliminar", según si ya está en Mis líneas.
+class FichaDeLinea extends StatelessWidget {
+  const FichaDeLinea({
     super.key,
     required this.linea,
-    required this.subwayLine,
+    required this.recorridos,
     required this.agregada,
     required this.onAgregar,
     required this.onEliminar,
     required this.onCerrar,
   });
 
-  final LineaDeSubte linea;
+  final Linea linea;
 
-  /// La Línea según el backend, de donde salen las Terminales. Null si todavía no llegó.
-  final SubwayLine? subwayLine;
+  /// Una fila por Recorrido: "Plaza de Mayo – San Pedrito" en Subte y una por Ramal en Colectivo
+  /// ("60A · Constitución – Escobar"). Vacío mientras no llegan los datos del backend.
+  final List<String> recorridos;
 
   /// Si la Línea está en Mis líneas.
   final bool agregada;
@@ -252,11 +253,11 @@ class FichaDeLineaDeSubte extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SheetFrame(
-      leading: ExcludeSemantics(child: CirculoDeSubte(linea: linea)),
+      leading: ExcludeSemantics(child: IconoDeLinea(linea: linea)),
       title: linea.nombre,
       trailing: IconButton(tooltip: 'Cerrar', icon: const Icon(Icons.close), onPressed: onCerrar),
       children: [
-        if (subwayLine?.terminales case (final desde, final hasta)) _InfoRow(icon: Icons.route, text: '$desde – $hasta'),
+        for (final recorrido in recorridos) _InfoRow(icon: Icons.route, text: recorrido),
         const SizedBox(height: 12),
         if (agregada)
           OutlinedButton.icon(onPressed: onEliminar, icon: const Icon(Icons.delete_outline), label: const Text('Eliminar'))

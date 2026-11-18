@@ -1,20 +1,22 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../data/catalogo_de_colectivos.dart';
 import '../data/lineas_de_subte.dart';
 import '../settings/mis_lineas.dart';
 import 'buscador_de_lineas.dart';
 import 'lineas_comun.dart';
 
 /// Pantalla Mis líneas: las Líneas del usuario agrupadas por Medio, para agregarlas y sacarlas.
-/// Por ahora tiene los grupos Subte y Ecobici. El "+" de la barra pregunta el Medio y abre el
+/// Tiene los grupos Colectivo, Subte y Ecobici. El "+" de la barra pregunta el Medio y abre el
 /// buscador de ese Medio.
 class MisLineasScreen extends StatelessWidget {
-  const MisLineasScreen({super.key, required this.misLineas});
+  const MisLineasScreen({super.key, required this.misLineas, required this.catalogo});
 
   final MisLineas misLineas;
+  final CatalogoDeColectivos catalogo;
 
-  static Route<void> route(MisLineas misLineas) =>
-      MaterialPageRoute(builder: (_) => MisLineasScreen(misLineas: misLineas));
+  static Route<void> route(MisLineas misLineas, CatalogoDeColectivos catalogo) =>
+      MaterialPageRoute(builder: (_) => MisLineasScreen(misLineas: misLineas, catalogo: catalogo));
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,19 @@ class MisLineasScreen extends StatelessWidget {
       body: ListenableBuilder(
         listenable: misLineas,
         builder: (context, _) => ListView(
-          children: [_GrupoSubte(misLineas: misLineas), _GrupoEcobici(misLineas: misLineas)],
+          children: [
+            _GrupoDeLineas(
+              misLineas: misLineas,
+              medio: Medio.colectivo,
+              onAgregar: (context) => _buscarYAgregar(context, Medio.colectivo),
+            ),
+            _GrupoDeLineas(
+              misLineas: misLineas,
+              medio: Medio.subte,
+              onAgregar: _subteDisponibles.isEmpty ? null : _agregarSubte,
+            ),
+            _GrupoEcobici(misLineas: misLineas),
+          ],
         ),
       ),
     );
@@ -36,7 +50,6 @@ class MisLineasScreen extends StatelessWidget {
 
   /// Pregunta de qué Medio es la Línea y abre el buscador filtrado por ese Medio.
   Future<void> _agregar(BuildContext context) async {
-    final navigator = Navigator.of(context);
     final medio = await showModalBottomSheet<Medio>(
       context: context,
       showDragHandle: true,
@@ -60,64 +73,21 @@ class MisLineasScreen extends StatelessWidget {
         ),
       ),
     );
-    if (medio == null) return;
-    final linea = await navigator.push(AgregarLineaScreen.route(misLineas, medio));
+    if (medio != null && context.mounted) await _buscarYAgregar(context, medio);
+  }
+
+  /// Abre el buscador de Líneas de ese Medio y agrega la elegida.
+  Future<void> _buscarYAgregar(BuildContext context, Medio medio) async {
+    final linea = await Navigator.of(context).push(AgregarLineaScreen.route(misLineas, catalogo, medio));
     if (linea != null) await misLineas.agregar(linea);
   }
-}
 
-class _GrupoSubte extends StatelessWidget {
-  const _GrupoSubte({required this.misLineas});
+  List<LineaDeSubte> get _subteDisponibles =>
+      [for (final l in LineaDeSubte.todas) if (!misLineas.contiene(l.linea)) l];
 
-  final MisLineas misLineas;
-
-  @override
-  Widget build(BuildContext context) {
-    final mias = [for (final l in misLineas.lineasDe(Medio.subte)) LineaDeSubte.porId(l.id)];
-    final disponibles = [for (final l in LineaDeSubte.todas) if (!misLineas.contiene(l.linea)) l];
-    final text = Theme.of(context).textTheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
-          child: Row(
-            children: [
-              const Icon(Icons.subway_outlined),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Subte', style: text.titleMedium)),
-              IconButton(
-                tooltip: 'Agregar línea de Subte',
-                icon: const Icon(Icons.add),
-                onPressed: disponibles.isEmpty ? null : () => _agregar(context, disponibles),
-              ),
-            ],
-          ),
-        ),
-        if (mias.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              'Todavía no agregaste líneas de Subte.',
-              style: text.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
-            ),
-          ),
-        for (final linea in mias)
-          ListTile(
-            leading: ExcludeSemantics(child: CirculoDeSubte(linea: linea, size: 36)),
-            title: Text(linea.nombre),
-            trailing: IconButton(
-              tooltip: 'Eliminar ${linea.conArticulo}',
-              icon: const Icon(Icons.close),
-              onPressed: () => _eliminar(context, linea),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Future<void> _agregar(BuildContext context, List<LineaDeSubte> disponibles) async {
+  /// El "+" de Subte ofrece las Líneas que faltan como círculos de su color.
+  Future<void> _agregarSubte(BuildContext context) async {
+    final disponibles = _subteDisponibles;
     final elegida = await showModalBottomSheet<LineaDeSubte>(
       context: context,
       showDragHandle: true,
@@ -154,9 +124,80 @@ class _GrupoSubte extends StatelessWidget {
     );
     if (elegida != null) await misLineas.agregar(elegida.linea);
   }
+}
 
-  Future<void> _eliminar(BuildContext context, LineaDeSubte linea) =>
-      eliminarConDeshacer(ScaffoldMessenger.of(context), misLineas, linea.linea);
+/// Encabezado de un grupo de la pantalla: el ícono y el nombre del Medio y, si se pasa, su "+".
+class _EncabezadoDeGrupo extends StatelessWidget {
+  const _EncabezadoDeGrupo({required this.medio, this.agregar});
+
+  final Medio medio;
+
+  /// El botón "+" del grupo. Null en Ecobici, que no tiene Líneas.
+  final Widget? agregar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, agregar == null ? 16 : 8, 4),
+      child: Row(
+        children: [
+          Icon(medio.icono),
+          const SizedBox(width: 12),
+          Expanded(child: Text(medio.nombre, style: Theme.of(context).textTheme.titleMedium)),
+          ?agregar,
+        ],
+      ),
+    );
+  }
+}
+
+/// El grupo de un Medio con Líneas: sus Líneas en orden de agregado, cada una con su ✕, y el
+/// "+" para agregar más. El grupo se ve aunque se quede sin Líneas.
+class _GrupoDeLineas extends StatelessWidget {
+  const _GrupoDeLineas({required this.misLineas, required this.medio, required this.onAgregar});
+
+  final MisLineas misLineas;
+  final Medio medio;
+
+  /// Lo que hace el "+". Null lo deshabilita (p. ej. si ya están todas las Líneas de Subte).
+  final Future<void> Function(BuildContext context)? onAgregar;
+
+  @override
+  Widget build(BuildContext context) {
+    final mias = misLineas.lineasDe(medio);
+    final onAgregar = this.onAgregar;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _EncabezadoDeGrupo(
+          medio: medio,
+          agregar: IconButton(
+            tooltip: 'Agregar línea de ${medio.nombre}',
+            icon: const Icon(Icons.add),
+            onPressed: onAgregar == null ? null : () => onAgregar(context),
+          ),
+        ),
+        if (mias.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'Todavía no agregaste líneas de ${medio.nombre}.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
+            ),
+          ),
+        for (final linea in mias)
+          ListTile(
+            leading: ExcludeSemantics(child: IconoDeLinea(linea: linea, size: 36)),
+            title: Text(linea.nombre),
+            trailing: IconButton(
+              tooltip: 'Eliminar ${linea.conArticulo}',
+              icon: const Icon(Icons.close),
+              onPressed: () => eliminarConDeshacer(ScaffoldMessenger.of(context), misLineas, linea),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 /// Ecobici no tiene Líneas: su grupo solo decide si las estaciones se muestran al abrir la app,
@@ -171,16 +212,7 @@ class _GrupoEcobici extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Row(
-            children: [
-              const Icon(Icons.pedal_bike),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Ecobici', style: Theme.of(context).textTheme.titleMedium)),
-            ],
-          ),
-        ),
+        const _EncabezadoDeGrupo(medio: Medio.ecobici),
         SwitchListTile(
           title: const Text('Mostrar estaciones al abrir la app'),
           value: misLineas.medios.contains(Medio.ecobici),

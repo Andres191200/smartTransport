@@ -34,11 +34,20 @@ class Bus {
 
   final String id;
   final LatLng position;
+
+  /// El Ramal, p. ej. "60A".
   final String line;
   final String? headsign;
   final String? agency;
   final double? speedMps;
   final DateTime? timestamp;
+
+  /// La Línea de Colectivo del Ramal: su número sin el sufijo de letras ("60A" → "60"), con la
+  /// misma regla que el backend.
+  String get lineId {
+    final name = line.trim().toUpperCase();
+    return RegExp(r'^(.*\d)[A-Z]*$').firstMatch(name)?.group(1) ?? name;
+  }
 }
 
 class BusesResult {
@@ -53,6 +62,47 @@ class BusesResult {
 
   /// true si había más colectivos en la zona de los que devolvió el servidor.
   final bool truncated;
+}
+
+/// Un Ramal de una Línea de Colectivo (p. ej. el 60A), con sus Terminales y su Recorrido.
+class BusBranch {
+  const BusBranch({required this.id, this.terminales, this.path = const []});
+
+  factory BusBranch.fromJson(Map<String, dynamic> j) => BusBranch(
+        id: j['id'] as String,
+        terminales: switch (j['terminals']) {
+          [final String desde, final String hasta] => (desde, hasta),
+          _ => null,
+        },
+        path: [
+          for (final p in j['path'] as List? ?? const []) LatLng(_d((p as List)[0]), _d(p[1])),
+        ],
+      );
+
+  /// "60A", o "152" si la Línea tiene un solo Ramal.
+  final String id;
+
+  /// Las dos Terminales, en el sentido del Recorrido. Null si el backend no las conoce.
+  final (String, String)? terminales;
+
+  /// El Recorrido; vacío en el catálogo (se pide aparte) o si el backend no lo tiene.
+  final List<LatLng> path;
+}
+
+/// Una Línea de Colectivo con sus Ramales.
+class BusLine {
+  const BusLine({required this.id, required this.branches});
+
+  factory BusLine.fromJson(Map<String, dynamic> j) => BusLine(
+        id: j['id'] as String,
+        branches: [
+          for (final b in j['branches'] as List? ?? const []) BusBranch.fromJson(b as Map<String, dynamic>),
+        ],
+      );
+
+  /// El número de la Línea, p. ej. "60".
+  final String id;
+  final List<BusBranch> branches;
 }
 
 class SubwayStation {
