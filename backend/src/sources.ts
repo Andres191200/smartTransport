@@ -1,3 +1,4 @@
+import { BUS_GTFS_FILES, buildBusLines, type BusLine } from './adapters/bus-lines.ts';
 import { parseBusPositions, type Bus } from './adapters/buses.ts';
 import { mergeBikeStations, type BikeStation } from './adapters/ecobici.ts';
 import { readGtfsZip } from './adapters/gtfs.ts';
@@ -19,6 +20,8 @@ export type SourceMode = 'live' | 'demo';
 export interface TransitSource {
   readonly mode: SourceMode;
   buses(): Promise<Bus[]>;
+  /** Catálogo de Líneas de Colectivo con sus Ramales, Terminales y Recorridos. */
+  busLines(): Promise<BusLine[]>;
   subwayLines(): Promise<SubwayLine[]>;
   subwayArrivals(): Promise<SubwayArrival[]>;
   subwayAlerts(): Promise<ServiceAlert[]>;
@@ -32,6 +35,11 @@ export interface BikeSource {
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
+
+/** GTFS estático de colectivos (zip). Sin verificar contra la API real: ver `npm run check-api`. */
+export const BUS_GTFS_PATH = '/colectivos/feed-gtfs';
+/** Se espera que el zip de colectivos sea mucho más grande que el del subte: más margen para bajarlo. */
+export const BUS_GTFS_TIMEOUT_MS = 3 * MINUTE;
 
 /** Datos reales de la API Transporte, con caché para no superar la cuota ni sobrecargarla. */
 export class LiveSource implements TransitSource {
@@ -48,6 +56,14 @@ export class LiveSource implements TransitSource {
     return this.#cache.get('buses', 25 * SECOND, async () =>
       parseBusPositions(await this.#api.json('/colectivos/vehiclePositionsSimple')),
     );
+  }
+
+  busLines() {
+    // Cambia poco y es pesado de bajar y procesar: se arma una vez cada 24 h.
+    return this.#cache.get('bus-lines', 24 * 60 * MINUTE, async () => {
+      const zip = await this.#api.bytes(BUS_GTFS_PATH, {}, { timeoutMs: BUS_GTFS_TIMEOUT_MS });
+      return buildBusLines(readGtfsZip(zip, BUS_GTFS_FILES));
+    });
   }
 
   subwayLines() {

@@ -3,18 +3,23 @@
 //   - Ecobici (feed GBFS público): siempre.
 //   - Colectivos y subte (API Transporte del GCBA): solo si hay credenciales en el .env.
 
-import { parseBusPositions } from '../src/adapters/buses.ts';
+import { unzipSync } from 'fflate';
+import { BUS_GTFS_FILES, buildBusLines } from '../src/adapters/bus-lines.ts';
+import { parseBusPositions, type Bus } from '../src/adapters/buses.ts';
 import { readGtfsZip } from '../src/adapters/gtfs.ts';
 import { buildSubwayLines, parseServiceAlerts, parseSubwayForecast } from '../src/adapters/subway.ts';
 import { loadConfig } from '../src/config.ts';
 import { GbfsClient } from '../src/gbfs.ts';
-import { EcobiciSource } from '../src/sources.ts';
+import { BUS_GTFS_PATH, BUS_GTFS_TIMEOUT_MS, EcobiciSource } from '../src/sources.ts';
 import { TransporteClient } from '../src/upstream.ts';
 
 const config = loadConfig();
 
 /** Muestra un pedacito de la respuesta cruda: si un parser da 0, esto dice cómo viene el JSON. */
 const preview = (raw: unknown) => JSON.stringify(Array.isArray(raw) ? raw.slice(0, 1) : raw).slice(0, 600);
+
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+const since = (start: number) => `${((Date.now() - start) / 1000).toFixed(1)} s`;
 
 let failures = 0;
 async function check(name: string, run: () => Promise<{ count: number; raw?: unknown }>) {
@@ -50,9 +55,71 @@ if (!config.credentials) {
 } else {
   const api = new TransporteClient({ baseUrl: config.upstreamBaseUrl, ...config.credentials });
 
+  let liveBuses: Bus[] = [];
   await check('Colectivos (vehiclePositionsSimple)', async () => {
     const raw = await api.json('/colectivos/vehiclePositionsSimple');
-    return { count: parseBusPositions(raw).length, raw };
+    liveBuses = parseBusPositions(raw);
+    return { count: liveBuses.length, raw };
+  });
+
+  // El catálogo de Líneas sale de acá. Se informa la ruta, el tamaño, los archivos y sus columnas
+  // para confirmar lo que buildBusLines supone del feed (y si conviene separar los Recorridos).
+  await check(`Colectivos: catálogo de Líneas (GTFS estático, ${BUS_GTFS_PATH})`, async () => {
+    const start = Date.now();
+    const zip = await api.bytes(BUS_GTFS_PATH, {}, { timeoutMs: BUS_GTFS_TIMEOUT_MS });
+    console.log(`    zip de ${mb(zip.length)}, bajado en ${since(start)}`);
+
+    const entries: string[] = [];
+    unzipSync(zip, {
+      filter: (file) => {
+        entries.push(file.name);
+        console.log(`    ${file.name}: ${mb(file.originalSize)} sin comprimir`);
+        return false;
+      },
+    });
+    const missing = BUS_GTFS_FILES.filter((name) => !entries.some((e) => e === name || e.endsWith(`/${name}`)));
+    if (missing.length) console.log(`    faltan: ${missing.join(', ')}`);
+
+    const files = readGtfsZip(zip, BUS_GTFS_FILES);
+    for (const [name, text] of Object.entries(files)) {
+      // Encabezado y primera fila: muestran los nombres de campos y cómo vienen los valores.
+      const [header, first] = text.split(/\r?\n/, 2);
+      console.log(`    ${name}: ${header}\n      p. ej. ${first}`);
+    }
+
+    const processing = Date.now();
+    const lines = buildBusLines(files);
+    const branches = lines.flatMap((l) => l.branches);
+    console.log(
+      `    procesado en ${since(processing)}, memoria del proceso: ${mb(process.memoryUsage().rss)}\n` +
+        `    ${lines.length} Líneas, ${branches.length} Ramales, ` +
+        `${branches.filter((b) => !b.terminals).length} sin Terminales, ` +
+        `${branches.filter((b) => b.path.length < 2).length} sin Recorrido`,
+    );
+    const catalog = lines.map((l) => ({ id: l.id, branches: l.branches.map(({ path: _path, ...b }) => b) }));
+    const heaviest = lines.reduce<{ id: string; size: number }>((max, l) => {
+      const size = JSON.stringify(l).length;
+      return size > max.size ? { id: l.id, size } : max;
+    }, { id: '-', size: 0 });
+    console.log(
+      `    /v1/buses/lines pesa ${mb(JSON.stringify(catalog).length)}; ` +
+        `la Línea con Recorridos más pesados (${heaviest.id}) pesa ${mb(heaviest.size)} en /v1/buses/paths`,
+    );
+    for (const line of lines.filter((l) => ['60', '152'].includes(l.id))) {
+      const detail = line.branches.map((b) => `${b.id} (${b.terminals?.join(' – ') ?? 'sin Terminales'}, ${b.path.length} puntos)`);
+      console.log(`    Línea ${line.id}: ${detail.join(', ')}`);
+    }
+
+    // Los colectivos en vivo tienen que poder ubicarse en el catálogo por su Ramal.
+    if (liveBuses.length) {
+      const known = new Set(branches.map((b) => b.id));
+      const unknown = [...new Set(liveBuses.map((b) => b.line.toUpperCase()).filter((line) => !known.has(line)))];
+      console.log(
+        `    Ramales en vivo que no están en el catálogo: ${unknown.length}` +
+          (unknown.length ? ` (p. ej. ${unknown.slice(0, 10).join(', ')})` : ''),
+      );
+    }
+    return { count: missing.length ? 0 : lines.length, raw: entries };
   });
 
   await check('Subte: líneas (feed-gtfs)', async () => {

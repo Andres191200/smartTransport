@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { strToU8, zipSync } from 'fflate';
-import { filterBuses, matchesLine, parseBusPositions } from '../src/adapters/buses.ts';
+import { buildBusLines } from '../src/adapters/bus-lines.ts';
+import { branchLine, filterBuses, matchesLine, parseBusPositions } from '../src/adapters/buses.ts';
 import { parseCsv, readGtfsZip } from '../src/adapters/gtfs.ts';
 import {
   arrivalsForStation,
@@ -59,8 +60,112 @@ describe('colectivos', () => {
     const buses = parseBusPositions(raw);
     const box = { minLat: -34.605, minLon: -58.405, maxLat: -34.595, maxLon: -58.395 };
     assert.deepEqual(filterBuses(buses, { box, limit: 10 }).vehicles.map((b) => b.id), ['8217']);
-    assert.deepEqual(filterBuses(buses, { line: '152', limit: 10 }).vehicles.map((b) => b.id), ['9']);
+    assert.deepEqual(filterBuses(buses, { lines: ['152'], limit: 10 }).vehicles.map((b) => b.id), ['9']);
     assert.deepEqual(filterBuses(buses, { limit: 1 }), { vehicles: [buses[0]], truncated: true });
+  });
+
+  it('filterBuses con varias Líneas incluye todos sus Ramales', () => {
+    const buses = parseBusPositions([
+      { id: 'a', latitude: -34.6, longitude: -58.4, route_short_name: '60A' },
+      { id: 'b', latitude: -34.6, longitude: -58.4, route_short_name: '60B' },
+      { id: 'c', latitude: -34.6, longitude: -58.4, route_short_name: '152' },
+      { id: 'd', latitude: -34.6, longitude: -58.4, route_short_name: '160' },
+      { id: 'e', latitude: -34.6, longitude: -58.4, route_short_name: '29' },
+    ]);
+    const ids = filterBuses(buses, { lines: ['60', '152'], limit: 10 }).vehicles.map((b) => b.id);
+    assert.deepEqual(ids, ['a', 'b', 'c']);
+  });
+
+  it('branchLine: la Línea de un Ramal es su número sin el sufijo de letras', () => {
+    assert.equal(branchLine('60A'), '60');
+    assert.equal(branchLine('60'), '60');
+    assert.equal(branchLine('152ab'), '152');
+    // Sin número no hay sufijo que sacar.
+    assert.equal(branchLine('MB'), 'MB');
+    // Misma regla que el filtro: todo Ramal coincide con su Línea.
+    for (const branch of ['60A', '152', '39B', 'MB']) assert.ok(matchesLine(branch, branchLine(branch)));
+  });
+});
+
+describe('colectivos: GTFS estático (catálogo de Líneas)', () => {
+  const files = {
+    'routes.txt': [
+      'route_id,agency_id,route_short_name,route_long_name,route_type',
+      'r60a,1,60A,,3',
+      'r60b,1,60B,,3',
+      'r160,2,160,,3',
+      'r152,3,152,,3',
+      // Mismo Ramal con otro route_id (p. ej. otra empresa o variante): se junta con el 60A.
+      'r60a2,1,60A,,3',
+      'sin-nombre,4,,Algo,3',
+    ].join('\n'),
+    'trips.txt': [
+      'route_id,service_id,trip_id,trip_headsign,direction_id,shape_id',
+      // 60A: ida (0) hacia Escobar por sh60a, vuelta (1) hacia Constitución.
+      'r60a,S,t1,Escobar,0,sh60a',
+      'r60a,S,t2,Escobar,0,sh60a',
+      'r60a2,S,t3,Escobar,0,sh60a-corto',
+      'r60a,S,t4,Constitución,1,sh60a-vuelta',
+      // 60B: sin headsign ni vuelta; las Terminales salen de la parada más cercana a cada punta.
+      'r60b,S,t5,,0,sh60b',
+      'r160,S,t6,Pompeya,0,sh160',
+      'r160,S,t7,Retiro,1,sh160-vuelta',
+      // 152: sin recorrido en shapes.txt.
+      'r152,S,t8,Olivos,0,',
+      'r152,S,t9,La Boca,1,',
+    ].join('\n'),
+    'shapes.txt': [
+      'shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence',
+      'sh60a,-34.50,-58.60,3',
+      'sh60a,-34.62,-58.38,1',
+      'sh60a,-34.58,-58.42,2',
+      'sh60a-corto,-34.62,-58.38,1',
+      'sh60a-corto,-34.60,-58.40,2',
+      'sh60a-vuelta,-34.50,-58.60,1',
+      'sh60a-vuelta,-34.62,-58.38,2',
+      'sh60b,-34.6201,-58.3801,1',
+      'sh60b,-34.4301,-58.5701,2',
+      'sh160,-34.64,-58.41,1',
+      'sh160,-34.59,-58.37,2',
+    ].join('\n'),
+    'stops.txt': [
+      'stop_id,stop_name,stop_lat,stop_lon',
+      's1,Constitución,-34.6200,-58.3800',
+      's2,Tigre,-34.4300,-58.5700',
+      's3,Palermo,-34.5800,-58.4200',
+    ].join('\n'),
+  };
+
+  it('agrupa los Ramales en Líneas con la regla del filtro y ordena por número', () => {
+    const lines = buildBusLines(files);
+    assert.deepEqual(lines.map((l) => l.id), ['60', '152', '160']);
+    assert.deepEqual(lines[0]?.branches.map((b) => b.id), ['60A', '60B']);
+  });
+
+  it('las Terminales salen de los trip_headsign: de la vuelta a la ida', () => {
+    const [sixty] = buildBusLines(files);
+    assert.deepEqual(sixty?.branches[0]?.terminals, ['Constitución', 'Escobar']);
+  });
+
+  it('sin trip_headsign, las Terminales son las paradas más cercanas a las puntas del Recorrido', () => {
+    const [sixty] = buildBusLines(files);
+    assert.deepEqual(sixty?.branches[1]?.terminals, ['Constitución', 'Tigre']);
+  });
+
+  it('el Recorrido es el shape más usado por la ida, en orden de secuencia', () => {
+    const [sixty] = buildBusLines(files);
+    assert.deepEqual(sixty?.branches[0]?.path, [[-34.62, -58.38], [-34.58, -58.42], [-34.5, -58.6]]);
+  });
+
+  it('un Ramal sin shapes queda sin Recorrido pero con sus Terminales', () => {
+    const line152 = buildBusLines(files).find((l) => l.id === '152');
+    assert.deepEqual(line152?.branches, [{ id: '152', terminals: ['La Boca', 'Olivos'], path: [] }]);
+  });
+
+  it('se arma igual leyendo el zip del feed', () => {
+    const zip = zipSync(Object.fromEntries(Object.entries(files).map(([name, text]) => [`gtfs/${name}`, strToU8(text)])));
+    const lines = buildBusLines(readGtfsZip(zip, Object.keys(files)));
+    assert.deepEqual(lines.map((l) => l.id), ['60', '152', '160']);
   });
 });
 

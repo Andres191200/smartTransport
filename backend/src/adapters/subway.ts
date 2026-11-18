@@ -1,7 +1,7 @@
-import { parseCsv, type CsvRow } from './gtfs.ts';
+import { parseCsv, readShapes, type CsvRow, type LatLon } from './gtfs.ts';
 import { isObj, list, num, pick, str } from './read.ts';
 
-export type LatLon = [lat: number, lon: number];
+export type { LatLon };
 
 export interface SubwayStation {
   /** Clave estable línea + nombre; es la que se usa para pedir próximos trenes. */
@@ -62,7 +62,7 @@ export function buildSubwayLines(files: Record<string, string>): SubwayLine[] {
   const routes = parseCsv(files['routes.txt'] ?? '');
   const stops = new Map(parseCsv(files['stops.txt'] ?? '').map((s) => [s.stop_id ?? '', s]));
   const trips = parseCsv(files['trips.txt'] ?? '');
-  const shapes = groupShapes(parseCsv(files['shapes.txt'] ?? ''));
+  const shapes = readShapes(files['shapes.txt'] ?? '');
 
   const stopsByTrip = new Map<string, { seq: number; stopId: string }[]>();
   for (const st of parseCsv(files['stop_times.txt'] ?? '')) {
@@ -132,19 +132,6 @@ function resolveStation(stops: Map<string, CsvRow>, stopId: string) {
   const name = source.stop_name || stop.stop_name;
   if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
   return { name, lat, lon };
-}
-
-function groupShapes(rows: CsvRow[]): Map<string, LatLon[]> {
-  const byId = new Map<string, { seq: number; pt: LatLon }[]>();
-  for (const r of rows) {
-    const id = r.shape_id ?? '';
-    let arr = byId.get(id);
-    if (!arr) byId.set(id, (arr = []));
-    arr.push({ seq: Number(r.shape_pt_sequence), pt: [Number(r.shape_pt_lat), Number(r.shape_pt_lon)] });
-  }
-  const out = new Map<string, LatLon[]>();
-  for (const [id, pts] of byId) out.set(id, pts.sort((a, b) => a.seq - b.seq).map((p) => p.pt));
-  return out;
 }
 
 function cleanColor(value: string | undefined, fallback: string): string {

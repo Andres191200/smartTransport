@@ -31,12 +31,17 @@ export class TransporteClient {
     }
   }
 
-  async bytes(path: string, params: Record<string, string> = {}): Promise<Uint8Array> {
-    const res = await this.#fetch(path, params);
-    return new Uint8Array(await res.arrayBuffer());
+  /** `timeoutMs` cubre también la descarga del cuerpo: subilo para archivos grandes. */
+  async bytes(path: string, params: Record<string, string> = {}, opts: { timeoutMs?: number } = {}): Promise<Uint8Array> {
+    const res = await this.#fetch(path, params, opts.timeoutMs);
+    try {
+      return new Uint8Array(await res.arrayBuffer());
+    } catch (error) {
+      throw new UpstreamError(`Se cortó la descarga de ${path}: ${(error as Error).message}`, res.status);
+    }
   }
 
-  async #fetch(path: string, params: Record<string, string>): Promise<Response> {
+  async #fetch(path: string, params: Record<string, string>, timeoutMs = this.#timeoutMs): Promise<Response> {
     const url = new URL(this.#baseUrl + path);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     url.searchParams.set('client_id', this.#clientId);
@@ -44,7 +49,7 @@ export class TransporteClient {
 
     let res: Response;
     try {
-      res = await fetch(url, { signal: AbortSignal.timeout(this.#timeoutMs) });
+      res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
       // Nunca incluir la URL completa en el error: lleva las credenciales.
       throw new UpstreamError(`No se pudo conectar con ${path}: ${(error as Error).message}`);
