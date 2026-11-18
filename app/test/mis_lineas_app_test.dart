@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'support/app_harness.dart';
+import 'support/mis_lineas_steps.dart';
 
 /// Líneas A y D del backend, con pocas estaciones cerca del Obelisco (donde arranca el mapa).
 Map<String, Object> subwayLines() {
@@ -26,20 +27,6 @@ Map<String, Object> subwayLines() {
 }
 
 Finder station(String line) => find.bySemanticsLabel(RegExp('^Estación .*, línea $line\$'));
-
-Future<void> openMisLineas(WidgetTester tester) async {
-  await tester.tap(find.byTooltip('Menú'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('Mis líneas'));
-  await tester.pumpAndSettle();
-}
-
-Future<void> addSubwayLine(WidgetTester tester, String name) async {
-  await tester.tap(find.byTooltip('Agregar línea de Subte'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.bySemanticsLabel(name == 'Premetro' ? name : 'Línea $name'));
-  await tester.pumpAndSettle();
-}
 
 /// Nombres de las Líneas de la pantalla Mis líneas, de arriba hacia abajo.
 List<String> listedLines(WidgetTester tester) {

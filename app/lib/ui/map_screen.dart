@@ -13,6 +13,7 @@ import '../settings/mis_lineas.dart';
 import '../settings/theme_controller.dart';
 import 'app_drawer.dart';
 import 'base_map.dart';
+import 'fila_de_botones.dart';
 import 'markers.dart';
 import 'mis_lineas_screen.dart';
 import 'sheets.dart';
@@ -56,6 +57,10 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   final _map = MapController();
+  final _scaffold = GlobalKey<ScaffoldState>();
+
+  /// Lo que tapa el mapa arriba (barra, fila de botones y avisos): la cámara encuadra debajo.
+  final _overlay = GlobalKey();
   final _lineSearch = TextEditingController();
 
   /// Ecobici arranca según la preferencia de Mis líneas; lo que se prende o apaga después en el
@@ -76,6 +81,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   List<BikeStation> _bikes = const [];
   LatLng? _myLocation;
 
+  /// La Línea con la ficha abierta, si hay una. Su botón de la fila queda activo.
+  Linea? _fichaAbierta;
+  PersistentBottomSheetController? _ficha;
+
+  /// El contenido de la ficha abierta, para medirla. Cada ficha tiene su llave: la anterior
+  /// puede seguir en pantalla mientras se cierra.
+  GlobalKey _fichaKey = GlobalKey();
+
   String? _error;
   Timer? _debounce;
   final List<Timer> _pollers = [];
@@ -86,6 +99,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.misLineas.addListener(_onMisLineasChanged);
     _loadSubway();
     _loadBikes();
     _startPolling();
@@ -95,6 +109,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.misLineas.removeListener(_onMisLineasChanged);
     _stopPolling();
     _debounce?.cancel();
     _lineSearch.dispose();
@@ -243,6 +258,81 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _map.move(here, 16);
   }
 
+  /// Si la Línea de la ficha se eliminó (p. ej. desde la pantalla Mis líneas), la ficha se cierra.
+  void _onMisLineasChanged() {
+    if (_fichaAbierta case final linea? when !widget.misLineas.contiene(linea)) _ficha?.close();
+  }
+
+  /// La Línea según el backend, o null si todavía no llegó.
+  SubwayLine? _subwayLineDe(LineaDeSubte linea) =>
+      _subwayLines.where((l) => LineaDeSubte.de(l)?.id == linea.id).firstOrNull;
+
+  /// Abre la ficha de la Línea sin tapar el mapa; si ya estaba abierta, la cierra.
+  void _toggleFicha(LineaDeSubte linea) {
+    if (_fichaAbierta == linea.linea) {
+      _ficha?.close();
+      return;
+    }
+    final recorrido = _subwayLineDe(linea);
+    final key = _fichaKey = GlobalKey();
+    final controller = _scaffold.currentState!.showBottomSheet(
+      (context) => FichaDeLineaDeSubte(
+        key: key,
+        linea: linea,
+        recorrido: recorrido,
+        onEliminar: () => _eliminar(linea),
+      ),
+      showDragHandle: true,
+      elevation: 8,
+    );
+    setState(() {
+      _fichaAbierta = linea.linea;
+      _ficha = controller;
+    });
+    controller.closed.then((_) {
+      // Si se abrió otra ficha mientras tanto, la Línea abierta ya es otra.
+      if (mounted && _ficha == controller) {
+        setState(() {
+          _fichaAbierta = null;
+          _ficha = null;
+        });
+      }
+    });
+    if (recorrido != null && recorrido.path.isNotEmpty) {
+      // Cuando la ficha ya tiene tamaño, se sabe cuánto mapa queda a la vista.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _encuadrar(recorrido.path, key));
+    }
+  }
+
+  /// Mueve la cámara para que el Recorrido entre completo entre lo que tapa el mapa arriba y la
+  /// ficha abajo.
+  void _encuadrar(List<LatLng> recorrido, GlobalKey fichaKey) {
+    if (!mounted || fichaKey != _fichaKey) return; // ya se abrió otra ficha
+    final map = context.findRenderObject() as RenderBox?;
+    final overlay = _overlay.currentContext?.findRenderObject() as RenderBox?;
+    RenderBox? ficha;
+    fichaKey.currentContext?.visitAncestorElements((e) {
+      if (e.widget is! BottomSheet) return true;
+      ficha = e.findRenderObject() as RenderBox?;
+      return false;
+    });
+    if (map == null || overlay == null || ficha == null) return;
+
+    const margin = 24.0;
+    final top = overlay.localToGlobal(Offset(0, overlay.size.height), ancestor: map).dy;
+    _map.fitCamera(CameraFit.coordinates(
+      coordinates: recorrido,
+      padding: EdgeInsets.fromLTRB(margin, top + margin, margin, ficha!.size.height + margin),
+      maxZoom: 16,
+    ));
+  }
+
+  Future<void> _eliminar(LineaDeSubte linea) async {
+    final messenger = ScaffoldMessenger.of(context);
+    _ficha?.close();
+    await eliminarConDeshacer(messenger, widget.misLineas, linea);
+  }
+
   void _openSheet(Widget sheet) {
     showModalBottomSheet<void>(context: context, showDragHandle: true, isScrollControlled: true, builder: (_) => sheet);
   }
@@ -254,6 +344,32 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         for (final line in _subwayLines)
           if (LineaDeSubte.de(line) case final linea? when widget.misLineas.contiene(linea.linea)) line,
       ];
+
+  static const _layerButtons = {
+    TransitLayer.buses: ('Colectivos', Icons.directions_bus, ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
+    TransitLayer.bikes: ('Ecobici', Icons.pedal_bike, ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
+  };
+
+  Widget _layerButton(TransitLayer layer) {
+    final (text, icon, customization) = _layerButtons[layer]!;
+    final on = _layers.contains(layer);
+    return ToggleTextButton(
+      text: text,
+      icon: icon,
+      isActive: on,
+      onTap: () => _toggleLayer(layer, !on),
+      customization: customization,
+    );
+  }
+
+  /// El botón de una Línea de Mis líneas: abre su ficha y queda activo mientras está abierta.
+  Widget _lineaButton(LineaDeSubte linea) => ToggleTextButton(
+        text: linea.id,
+        icon: Icons.subway_outlined,
+        isActive: _fichaAbierta == linea.linea,
+        onTap: () => _toggleFicha(linea),
+        customization: ToggleTextButtonCustomization(borderColor: linea.color),
+      );
 
   @override
   Widget build(BuildContext context) =>
@@ -268,6 +384,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         _layers.contains(TransitLayer.buses) && _busLine == null && _zoom < _minZoomBuses;
 
     return Scaffold(
+      key: _scaffold,
       drawer: AppDrawer(theme: widget.theme, misLineas: widget.misLineas),
       body: Stack(
         children: [
@@ -344,28 +461,51 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(vertical: 12),
               child: Column(
+                key: _overlay,
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _TopBar(
-                    controller: _lineSearch,
-                    activeLine: _busLine,
-                    alertCount: _alerts.length,
-                    onSearch: _searchLine,
-                    onClear: _clearLine,
-                    onAlerts: () => _openSheet(AlertsSheet(alerts: _alerts, lines: _subwayLines)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: _TopBar(
+                      controller: _lineSearch,
+                      activeLine: _busLine,
+                      alertCount: _alerts.length,
+                      onSearch: _searchLine,
+                      onClear: _clearLine,
+                      onAlerts: () => _openSheet(AlertsSheet(alerts: _alerts, lines: _subwayLines)),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  _LayerChips(active: _layers, onToggle: _toggleLayer),
-                  if (_api.demoLayers case final demo when demo.isNotEmpty)
-                    _Banner(icon: Icons.science_outlined, text: 'Datos simulados: ${joinSpanish(demo)}'),
-                  if (_error case final error?)
-                    _Banner(icon: Icons.cloud_off, text: error, onTap: () {
-                      _loadSubway();
-                      _loadBikes();
-                      _loadBuses();
-                    }),
+                  const SizedBox(height: 4),
+                  // La fila ocupa todo el ancho para que los botones se deslicen hasta el borde.
+                  FilaDeBotones(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    fadeColor: BaseMap.backgroundFor(Theme.of(context).brightness),
+                    children: [
+                      _layerButton(TransitLayer.bikes),
+                      for (final linea in widget.misLineas.lineasDe(Medio.subte)) _lineaButton(LineaDeSubte.porId(linea.id)),
+                      // Hasta que Colectivo entre en Mis líneas (#12) queda el botón de capa.
+                      _layerButton(TransitLayer.buses),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_api.demoLayers case final demo when demo.isNotEmpty)
+                          _Banner(icon: Icons.science_outlined, text: 'Datos simulados: ${joinSpanish(demo)}'),
+                        if (_error case final error?)
+                          _Banner(icon: Icons.cloud_off, text: error, onTap: () {
+                            _loadSubway();
+                            _loadBikes();
+                            _loadBuses();
+                          }),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -454,35 +594,6 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 4),
         ],
       ),
-    );
-  }
-}
-
-class _LayerChips extends StatelessWidget {
-  const _LayerChips({required this.active, required this.onToggle});
-
-  final Set<TransitLayer> active;
-  final void Function(TransitLayer, bool) onToggle;
-
-  static const _buttons = {
-    TransitLayer.buses: ('Colectivos', Icons.directions_bus, ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
-    TransitLayer.bikes: ('Ecobici', Icons.pedal_bike, ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      children: [
-        for (final MapEntry(key: layer, value: (text, icon, customization)) in _buttons.entries)
-          ToggleTextButton(
-            text: text,
-            icon: icon,
-            isActive: active.contains(layer),
-            onTap: () => onToggle(layer, !active.contains(layer)),
-            customization: customization,
-          ),
-      ],
     );
   }
 }
