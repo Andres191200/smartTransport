@@ -43,9 +43,13 @@ Map<String, Object> subwayLines() {
 }
 
 /// Abre la app con [subwayLines] y agrega [lines] desde la pantalla Mis líneas (necesita
-/// `tester.ensureSemantics()`).
-Future<AppHarness> openWithLines(WidgetTester tester, List<String> lines) async {
-  final app = AppHarness(responses: {'/v1/subway/lines': subwayLines()});
+/// `tester.ensureSemantics()`). [responses] suma otras respuestas del backend (ver [AppHarness]).
+Future<AppHarness> openWithLines(
+  WidgetTester tester,
+  List<String> lines, {
+  Map<String, Object> responses = const {},
+}) async {
+  final app = AppHarness(responses: {'/v1/subway/lines': subwayLines(), ...responses});
   await app.open(tester);
   await openMisLineas(tester);
   for (final l in lines) {

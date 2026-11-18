@@ -271,6 +271,7 @@ class FichaDeLinea extends StatelessWidget {
 class AlertsSheet extends StatelessWidget {
   const AlertsSheet({super.key, required this.alerts, required this.lines});
 
+  /// Los avisos en el orden en que se muestran: el mapa pone primero los de Mis líneas.
   final List<ServiceAlert> alerts;
   final List<SubwayLine> lines;
 
