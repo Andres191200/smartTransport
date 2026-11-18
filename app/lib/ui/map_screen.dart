@@ -8,8 +8,12 @@ import 'package:material_ui/material_ui.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
+import '../settings/theme_controller.dart';
+import 'app_drawer.dart';
+import 'base_map.dart';
 import 'markers.dart';
 import 'sheets.dart';
+import 'toggle_text_button.dart';
 
 enum TransitLayer { buses, subway, bikes }
 
@@ -26,9 +30,10 @@ String joinSpanish(List<String> items) => items.length <= 1
     : '${items.sublist(0, items.length - 1).join(', ')} y ${items.last}';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key, required this.api});
+  const MapScreen({super.key, required this.api, required this.theme});
 
   final TransitApi api;
+  final ThemeController theme;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -232,6 +237,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         _layers.contains(TransitLayer.buses) && _busLine == null && _zoom < _minZoomBuses;
 
     return Scaffold(
+      drawer: AppDrawer(theme: widget.theme),
       body: Stack(
         children: [
           FlutterMap(
@@ -244,12 +250,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               onPositionChanged: _onPositionChanged,
               onMapReady: _loadBuses,
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+              backgroundColor: BaseMap.backgroundFor(Theme.of(context).brightness),
             ),
             children: [
-              TileLayer(
-                urlTemplate: AppConfig.tileUrlTemplate,
-                userAgentPackageName: AppConfig.userAgentPackageName,
-              ),
+              const BaseMap(),
               if (_layers.contains(TransitLayer.subway))
                 PolylineLayer(
                   polylines: [
@@ -305,7 +309,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 ),
               if (_myLocation case final here?)
                 MarkerLayer(markers: [Marker(point: here, width: 22, height: 22, child: const UserLocationMarker())]),
-              const SimpleAttributionWidget(source: Text(AppConfig.tileAttribution)),
+              const SimpleAttributionWidget(source: Text(AppConfig.mapAttribution)),
             ],
           ),
           SafeArea(
@@ -386,9 +390,12 @@ class _TopBar extends StatelessWidget {
       color: Theme.of(context).colorScheme.surface,
       child: Row(
         children: [
-          const SizedBox(width: 16),
-          const Icon(Icons.directions_bus_outlined),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Menú',
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
           Expanded(
             child: TextField(
               controller: controller,
@@ -421,10 +428,10 @@ class _LayerChips extends StatelessWidget {
   final Set<TransitLayer> active;
   final void Function(TransitLayer, bool) onToggle;
 
-  static const _labels = {
-    TransitLayer.buses: ('Colectivos', Icons.directions_bus),
-    TransitLayer.subway: ('Subte', Icons.subway),
-    TransitLayer.bikes: ('Ecobici', Icons.pedal_bike),
+  static const _buttons = {
+    TransitLayer.buses: ('Colectivos', Icons.directions_bus, ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
+    TransitLayer.subway: ('Subte', Icons.subway, ToggleTextButtonCustomization(borderColor: Color(0xFF7B1FA2))),
+    TransitLayer.bikes: ('Ecobici', Icons.pedal_bike, ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
   };
 
   @override
@@ -432,14 +439,13 @@ class _LayerChips extends StatelessWidget {
     return Wrap(
       spacing: 8,
       children: [
-        for (final MapEntry(key: layer, value: (label, icon)) in _labels.entries)
-          FilterChip(
-            avatar: Icon(icon, size: 18),
-            label: Text(label),
-            selected: active.contains(layer),
-            showCheckmark: false,
-            elevation: 2,
-            onSelected: (on) => onToggle(layer, on),
+        for (final MapEntry(key: layer, value: (text, icon, customization)) in _buttons.entries)
+          ToggleTextButton(
+            text: text,
+            icon: icon,
+            isActive: active.contains(layer),
+            onTap: () => onToggle(layer, !active.contains(layer)),
+            customization: customization,
           ),
       ],
     );
