@@ -40,8 +40,8 @@ class LineaEliminada {
 
 /// Mis líneas y los Medios elegidos por el usuario, guardados en el dispositivo.
 ///
-/// Reglas: las Líneas quedan en orden de agregado; agregar una Línea suma su Medio; y el
-/// grupo de un Medio no se borra solo cuando se queda sin Líneas.
+/// Reglas: las Líneas quedan en orden de agregado; agregar una Línea suma su Medio; quitar un
+/// Medio descarta sus Líneas; y el grupo de un Medio no se borra solo cuando se queda sin Líneas.
 class MisLineas extends ChangeNotifier {
   MisLineas._(this._prefs, this._medios, this._lineas);
 
@@ -98,6 +98,21 @@ class MisLineas extends ChangeNotifier {
     if (_lineas.contains(eliminada.linea)) return;
     _lineas.insert(eliminada.posicion.clamp(0, _lineas.length), eliminada.linea);
     _medios.add(eliminada.linea.medio);
+    notifyListeners();
+    await _guardar();
+  }
+
+  /// Suma el Medio a los elegidos. Elegir Ecobici es prender "mostrar estaciones al abrir la app".
+  Future<void> elegir(Medio medio) async {
+    if (!_medios.add(medio)) return;
+    notifyListeners();
+    await _guardar();
+  }
+
+  /// Saca el Medio de los elegidos y descarta sus Líneas: no quedan Líneas de un Medio no elegido.
+  Future<void> quitar(Medio medio) async {
+    if (!_medios.remove(medio)) return;
+    _lineas.removeWhere((l) => l.medio == medio);
     notifyListeners();
     await _guardar();
   }

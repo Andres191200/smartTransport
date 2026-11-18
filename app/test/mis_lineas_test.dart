@@ -74,6 +74,28 @@ void main() {
     expect((await MisLineas.load()).medios, {Medio.subte});
   });
 
+  test('elegir y quitar un Medio se guarda', () async {
+    final mis = await MisLineas.load();
+    await mis.elegir(Medio.ecobici);
+    expect(mis.medios, {Medio.ecobici});
+    expect((await MisLineas.load()).medios, {Medio.ecobici});
+
+    await mis.quitar(Medio.ecobici);
+    expect(mis.medios, isEmpty);
+    expect((await MisLineas.load()).medios, isEmpty);
+  });
+
+  test('quitar un Medio descarta sus Líneas y deja las de los demás', () async {
+    final mis = await MisLineas.load();
+    await mis.agregar(d);
+    await mis.elegir(Medio.ecobici);
+
+    await mis.quitar(Medio.subte);
+    expect(mis.lineas, isEmpty);
+    expect(mis.medios, {Medio.ecobici});
+    expect((await MisLineas.load()).lineas, isEmpty);
+  });
+
   test('avisa a quien lo escucha cuando cambia', () async {
     final mis = await MisLineas.load();
     var avisos = 0;
@@ -82,7 +104,9 @@ void main() {
     await mis.agregar(d);
     final eliminada = await mis.eliminar(d);
     await mis.deshacer(eliminada!);
+    await mis.elegir(Medio.ecobici);
+    await mis.quitar(Medio.ecobici);
 
-    expect(avisos, 3);
+    expect(avisos, 5);
   });
 }
