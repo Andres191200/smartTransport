@@ -8,6 +8,7 @@ import 'package:shared_preferences_platform_interface/in_memory_shared_preferenc
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:smart_transport/data/transit_api.dart';
 import 'package:smart_transport/main.dart';
+import 'package:smart_transport/settings/mis_lineas.dart';
 import 'package:smart_transport/settings/theme_controller.dart';
 
 /// Respuestas vacías de cada endpoint del backend: la app arranca sin transporte que mostrar.
@@ -65,10 +66,12 @@ class AppHarness {
 
     SharedPreferencesAsyncPlatform.instance = prefs;
     final theme = await ThemeController.load();
+    final misLineas = await MisLineas.load();
     await tester.pumpWidget(SmartTransportApp(
       key: UniqueKey(), // otra apertura arranca de cero, con estado nuevo
       api: api,
       theme: theme,
+      misLineas: misLineas,
       baseMap: const FakeBaseMap(),
     ));
     await tester.pumpAndSettle();
