@@ -6,16 +6,21 @@ import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../config.dart';
+import '../data/lineas_de_subte.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
+import '../settings/mis_lineas.dart';
 import '../settings/theme_controller.dart';
 import 'app_drawer.dart';
 import 'base_map.dart';
 import 'markers.dart';
+import 'mis_lineas_screen.dart';
 import 'sheets.dart';
 import 'toggle_text_button.dart';
 
-enum TransitLayer { buses, subway, bikes }
+/// Capas que se prenden y apagan desde la fila de botones. Del Subte se dibujan siempre las
+/// Líneas de Mis líneas.
+enum TransitLayer { buses, bikes }
 
 /// Debajo de estos zooms no se dibuja la capa (serían demasiados marcadores).
 const _minZoomBuses = 14.0;
@@ -30,10 +35,17 @@ String joinSpanish(List<String> items) => items.length <= 1
     : '${items.sublist(0, items.length - 1).join(', ')} y ${items.last}';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key, required this.api, required this.theme, this.baseMap = const BaseMap()});
+  const MapScreen({
+    super.key,
+    required this.api,
+    required this.theme,
+    required this.misLineas,
+    this.baseMap = const BaseMap(),
+  });
 
   final TransitApi api;
   final ThemeController theme;
+  final MisLineas misLineas;
 
   /// Capa del mapa base: el primer hijo de FlutterMap (ver [BaseMap]).
   final Widget baseMap;
@@ -232,15 +244,26 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   // ---------------------------------------------------------------- UI
 
+  /// Las Líneas de Subte de Mis líneas, con su Recorrido y sus estaciones.
+  List<SubwayLine> get _mySubwayLines => [
+        for (final line in _subwayLines)
+          if (LineaDeSubte.de(line) case final linea? when widget.misLineas.contiene(linea.linea)) line,
+      ];
+
   @override
-  Widget build(BuildContext context) {
-    final showStations = _layers.contains(TransitLayer.subway) && _zoom >= _minZoomSubwayStations;
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: widget.misLineas, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
+    final subwayLines = _mySubwayLines;
+    final showStations = _zoom >= _minZoomSubwayStations;
+    final isEmpty = widget.misLineas.lineas.isEmpty && !_layers.contains(TransitLayer.bikes);
     final showBikes = _layers.contains(TransitLayer.bikes) && _zoom >= _minZoomBikes;
     final busesHidden =
         _layers.contains(TransitLayer.buses) && _busLine == null && _zoom < _minZoomBuses;
 
     return Scaffold(
-      drawer: AppDrawer(theme: widget.theme),
+      drawer: AppDrawer(theme: widget.theme, misLineas: widget.misLineas),
       body: Stack(
         children: [
           FlutterMap(
@@ -257,17 +280,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             ),
             children: [
               widget.baseMap,
-              if (_layers.contains(TransitLayer.subway))
-                PolylineLayer(
-                  polylines: [
-                    for (final line in _subwayLines)
-                      Polyline(points: line.path, color: line.color, strokeWidth: 5),
-                  ],
-                ),
+              PolylineLayer(
+                polylines: [
+                  for (final line in subwayLines)
+                    Polyline(points: line.path, color: line.color, strokeWidth: 5),
+                ],
+              ),
               if (showStations)
                 MarkerLayer(
                   markers: [
-                    for (final line in _subwayLines)
+                    for (final line in subwayLines)
                       for (final station in line.stations)
                         Marker(
                           point: station.position,
@@ -343,6 +365,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
+          if (isEmpty)
+            Center(
+              child: _EmptyMessage(
+                onAdd: () => Navigator.of(context).push(MisLineasScreen.route(widget.misLineas)),
+              ),
+            ),
           if (busesHidden || _busesTruncated)
             Positioned(
               left: 0,
@@ -433,7 +461,6 @@ class _LayerChips extends StatelessWidget {
 
   static const _buttons = {
     TransitLayer.buses: ('Colectivos', Icons.directions_bus, ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
-    TransitLayer.subway: ('Subte', Icons.subway, ToggleTextButtonCustomization(borderColor: Color(0xFF7B1FA2))),
     TransitLayer.bikes: ('Ecobici', Icons.pedal_bike, ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
   };
 
@@ -451,6 +478,39 @@ class _LayerChips extends StatelessWidget {
             customization: customization,
           ),
       ],
+    );
+  }
+}
+
+/// Lo que muestra el mapa cuando no hay nada propio que dibujar.
+class _EmptyMessage extends StatelessWidget {
+  const _EmptyMessage({required this.onAdd});
+
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Card(
+      elevation: 3,
+      margin: const EdgeInsets.all(32),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Tu mapa está vacío', style: text.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Agregá las líneas que usás para verlas en el mapa.',
+              textAlign: TextAlign.center,
+              style: text.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: const Text('Agregar líneas')),
+          ],
+        ),
+      ),
     );
   }
 }
