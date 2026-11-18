@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../config.dart';
+import '../data/catalogo_de_colectivos.dart';
 import '../data/lineas_de_subte.dart';
 import '../data/models.dart';
 import '../data/transit_api.dart';
@@ -21,12 +23,8 @@ import 'mis_lineas_screen.dart';
 import 'sheets.dart';
 import 'toggle_text_button.dart';
 
-/// Capas que se prenden y apagan desde la fila de botones. Del Subte se dibujan siempre las
-/// Líneas de Mis líneas.
-enum TransitLayer { buses, bikes }
-
-/// Debajo de estos zooms no se dibuja la capa (serían demasiados marcadores).
-const _minZoomBuses = 14.0;
+/// Debajo de estos zooms no se dibuja la capa (serían demasiados marcadores). Los colectivos se
+/// ven con cualquier zoom: son solo los de Mis líneas.
 const _minZoomSubwayStations = 12.5;
 const _minZoomBikes = 13.5;
 
@@ -68,26 +66,30 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   /// Lo escrito en el buscador: mientras no está vacío, se muestran las Líneas que coinciden.
   String _consulta = '';
 
+  late final _catalogo = CatalogoDeColectivos(widget.api);
+
   /// Ecobici arranca según la preferencia de Mis líneas; lo que se prende o apaga después en el
   /// mapa no se guarda.
-  late final _layers = {
-    TransitLayer.buses,
-    if (widget.misLineas.medios.contains(Medio.ecobici)) TransitLayer.bikes,
-  };
+  late bool _ecobici = widget.misLineas.medios.contains(Medio.ecobici);
   double _zoom = 14;
 
+  /// Los colectivos en vivo de las Líneas de Colectivo de Mis líneas.
   List<Bus> _buses = const [];
-  bool _busesTruncated = false;
-  String? _busLine;
   int _busRequestId = 0;
+
+  /// Las Líneas de Colectivo del último pedido de colectivos: si cambian, se pide de nuevo.
+  List<String> _colectivosPedidos = const [];
+
+  /// Los Recorridos de las Líneas de Colectivo cuya ficha se abrió, por número de Línea.
+  final _recorridosDeColectivo = <String, BusLine>{};
 
   List<SubwayLine> _subwayLines = const [];
   List<ServiceAlert> _alerts = const [];
   List<BikeStation> _bikes = const [];
   LatLng? _myLocation;
 
-  /// La Línea con la ficha abierta, si hay una. Su botón de la fila queda activo. Si no está en
-  /// Mis líneas, el mapa dibuja su vista previa.
+  /// La Línea con la ficha abierta, si hay una. Su botón de la fila queda activo y el mapa dibuja
+  /// su Recorrido (los de todos sus Ramales, en Colectivo).
   Linea? _fichaAbierta;
   PersistentBottomSheetController? _ficha;
 
@@ -102,20 +104,23 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   GlobalKey _fichaKey = GlobalKey();
 
   String? _error;
-  Timer? _debounce;
   final List<Timer> _pollers = [];
 
   TransitApi get _api => widget.api;
+
+  /// Los números de las Líneas de Colectivo de Mis líneas, en orden de agregado.
+  List<String> get _misColectivos => [for (final l in widget.misLineas.lineasDe(Medio.colectivo)) l.id];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.misLineas.addListener(_onMisLineasChanged);
+    _loadCatalogo();
     _loadSubway();
     _loadBikes();
+    _loadBuses();
     _startPolling();
-    // La primera carga de colectivos espera a que el mapa tenga tamaño (ver onMapReady).
   }
 
   @override
@@ -123,8 +128,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.misLineas.removeListener(_onMisLineasChanged);
     _stopPolling();
-    _debounce?.cancel();
     _lineSearch.dispose();
+    _catalogo.dispose();
     super.dispose();
   }
 
@@ -166,6 +171,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// El catálogo de Colectivo, para el buscador y las fichas.
+  Future<void> _loadCatalogo() => _guard(() async {
+        await _catalogo.cargar();
+        // Si la ficha de una Línea de Colectivo se abrió antes, ahora se completan sus Ramales.
+        _ficha?.setState?.call(() {});
+      });
+
   Future<void> _loadSubway() => _guard(() async {
         final lines = await _api.subwayLines();
         if (!mounted) return;
@@ -182,67 +194,60 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       });
 
   Future<void> _loadBikes() async {
-    if (!_layers.contains(TransitLayer.bikes)) return;
+    if (!_ecobici) return;
     await _guard(() async {
       final bikes = await _api.bikeStations();
       if (mounted) setState(() => _bikes = bikes);
     });
   }
 
+  /// Pide en un solo pedido los colectivos de todas las Líneas de Colectivo de Mis líneas, en toda
+  /// la ciudad. Sin Líneas de Colectivo no pide nada.
   Future<void> _loadBuses() async {
-    final line = _busLine;
-    final camera = _cameraOrNull();
-    final visible = _layers.contains(TransitLayer.buses) && (line != null || _zoom >= _minZoomBuses);
-    if (!visible || camera == null) {
+    final lines = _colectivosPedidos = _misColectivos;
+    final requestId = ++_busRequestId;
+    if (lines.isEmpty) {
       if (_buses.isNotEmpty) setState(() => _buses = const []);
       return;
     }
-
-    // Si se buscó una línea, se muestra toda la línea; si no, solo lo que se ve en pantalla.
-    final bounds = camera.visibleBounds;
-    final requestId = ++_busRequestId;
     await _guard(() async {
-      final result = await _api.buses(
-        line: line,
-        bounds: line != null ? null : (southWest: bounds.southWest, northEast: bounds.northEast),
-      );
-      // Si mientras tanto salió otro pedido (el usuario movió el mapa), descartar este.
+      final result = await _api.buses(lines: lines);
+      // Si mientras tanto salió otro pedido (cambiaron Mis líneas), descartar este.
       if (!mounted || requestId != _busRequestId) return;
-      setState(() {
-        _buses = result.vehicles;
-        _busesTruncated = result.truncated;
-      });
+      setState(() => _buses = result.vehicles);
     });
   }
 
-  MapCamera? _cameraOrNull() {
-    try {
-      return _map.camera;
-    } on Object {
-      return null; // El mapa todavía no se dibujó.
-    }
+  /// Los Recorridos de todos los Ramales de una Línea de Colectivo: se piden al abrir su ficha.
+  Future<void> _loadRecorridos(String line) async {
+    if (_recorridosDeColectivo.containsKey(line)) return;
+    await _guard(() async {
+      final busLine = await _api.busPaths(line);
+      if (!mounted) return;
+      setState(() => _recorridosDeColectivo[line] = busLine);
+      _ficha?.setState?.call(() {});
+      _encuadrarFicha();
+    });
   }
 
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (camera.zoom != _zoom) setState(() => _zoom = camera.zoom);
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 450), _loadBuses);
   }
 
   // ---------------------------------------------------------------- acciones
 
-  void _toggleLayer(TransitLayer layer, bool on) {
-    setState(() => on ? _layers.add(layer) : _layers.remove(layer));
-    if (on && layer == TransitLayer.bikes) _loadBikes();
-    if (layer == TransitLayer.buses) _loadBuses();
+  void _toggleEcobici() {
+    setState(() => _ecobici = !_ecobici);
+    _loadBikes();
   }
 
-  /// Enter en el buscador: abre la primera Línea encontrada. Si no hay ninguna, busca los
-  /// colectivos en vivo de esa línea, como antes (hasta que Colectivo entre al buscador, #12).
+  List<Linea> _buscar(String consulta) => consulta.trim().isEmpty
+      ? const []
+      : buscarLineas(consulta, colectivos: [for (final l in _catalogo.lineas) l.id]);
+
+  /// Enter en el buscador abre la primera Línea encontrada.
   void _onSearchSubmitted(String value) {
-    final encontradas = buscarLineas(value);
-    if (value.trim().isEmpty || encontradas.isEmpty) return _searchLine(value);
-    _elegirResultado(encontradas.first);
+    if (_buscar(value) case [final primera, ...]) _elegirResultado(primera);
   }
 
   /// Tocar un resultado del buscador abre la ficha de la Línea.
@@ -250,24 +255,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _lineSearch.clear();
     setState(() => _consulta = '');
     FocusScope.of(context).unfocus();
-    if (linea.medio == Medio.subte) _abrirFicha(LineaDeSubte.porId(linea.id));
-  }
-
-  void _searchLine(String value) {
-    final line = value.trim().toUpperCase();
-    setState(() {
-      _busLine = line.isEmpty ? null : line;
-      _buses = const [];
-      _layers.add(TransitLayer.buses);
-    });
-    FocusScope.of(context).unfocus();
-    _loadBuses();
-  }
-
-  void _clearLine() {
-    _lineSearch.clear();
-    _consulta = '';
-    _searchLine('');
+    _abrirFicha(linea);
   }
 
   Future<void> _goToMyLocation() async {
@@ -291,57 +279,83 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _map.move(here, 16);
   }
 
-  /// Si la Línea de la ficha se eliminó (p. ej. desde la pantalla Mis líneas), la ficha se cierra.
-  /// La ficha de una vista previa sigue abierta, también cuando la Línea se agrega.
+  /// Si cambian las Líneas de Colectivo, se piden sus colectivos. Si la Línea de la ficha se
+  /// eliminó (p. ej. desde la pantalla Mis líneas), la ficha se cierra. La ficha de una vista
+  /// previa sigue abierta, también cuando la Línea se agrega.
   void _onMisLineasChanged() {
+    if (!listEquals(_misColectivos, _colectivosPedidos)) _loadBuses();
     final linea = _fichaAbierta;
     if (linea == null) return;
     final enMisLineas = widget.misLineas.contiene(linea);
-    if (_fichaEnMisLineas && !enMisLineas) _ficha?.close();
+    if (_fichaEnMisLineas && !enMisLineas) _cerrarFicha();
     _fichaEnMisLineas = enMisLineas;
   }
 
-  /// La Línea según el backend, o null si todavía no llegó.
+  /// La Línea de Subte según el backend, o null si todavía no llegó.
   SubwayLine? _subwayLineDe(LineaDeSubte linea) =>
       _subwayLines.where((l) => LineaDeSubte.de(l)?.id == linea.id).firstOrNull;
 
+  /// Los Recorridos de la Línea que ya llegaron del backend: uno en Subte, uno por Ramal en
+  /// Colectivo (los Ramales sin Recorrido no se dibujan).
+  List<List<LatLng>> _recorridos(Linea linea) => switch (linea.deSubte) {
+        final subte? => [?_subwayLineDe(subte)?.path],
+        null => [
+            for (final ramal in _recorridosDeColectivo[linea.id]?.branches ?? const <BusBranch>[])
+              if (ramal.path.isNotEmpty) ramal.path,
+          ],
+      };
+
+  /// Las filas de la ficha: las Terminales de la Línea de Subte, o cada Ramal de Colectivo con
+  /// las suyas ("60A · Constitución – Escobar"). Los Ramales salen del catálogo hasta que llegan
+  /// los Recorridos.
+  List<String> _filasDeFicha(Linea linea) {
+    if (linea.deSubte case final subte?) {
+      return [if (_subwayLineDe(subte)?.terminales case (final desde, final hasta)) '$desde – $hasta'];
+    }
+    final ramales = (_recorridosDeColectivo[linea.id] ?? _catalogo.porId(linea.id))?.branches ?? const [];
+    return [
+      for (final ramal in ramales)
+        if (ramal.terminales case (final desde, final hasta)) '${ramal.id} · $desde – $hasta' else ramal.id,
+    ];
+  }
+
   /// El botón de una Línea de la fila abre su ficha; si ya estaba abierta, la cierra.
-  void _toggleFicha(LineaDeSubte linea) {
-    if (_fichaAbierta == linea.linea) {
-      _ficha?.close();
+  void _toggleFicha(Linea linea) {
+    if (_fichaAbierta == linea) {
+      _cerrarFicha();
     } else {
       _abrirFicha(linea);
     }
   }
 
   /// Abre la ficha de la Línea sin tapar el mapa y encuadra su Recorrido.
-  void _abrirFicha(LineaDeSubte linea) {
-    if (_fichaAbierta == linea.linea) return _encuadrarFicha(otraVez: true);
+  void _abrirFicha(Linea linea) {
+    if (_fichaAbierta == linea) return _encuadrarFicha(otraVez: true);
     final key = _fichaKey = GlobalKey();
     final controller = _scaffold.currentState!.showBottomSheet(
       (context) => ListenableBuilder(
         listenable: widget.misLineas,
-        builder: (context, _) => FichaDeLineaDeSubte(
+        builder: (context, _) => FichaDeLinea(
           key: key,
           linea: linea,
-          subwayLine: _subwayLineDe(linea),
-          agregada: widget.misLineas.contiene(linea.linea),
-          onAgregar: () => widget.misLineas.agregar(linea.linea),
+          recorridos: _filasDeFicha(linea),
+          agregada: widget.misLineas.contiene(linea),
+          onAgregar: () => widget.misLineas.agregar(linea),
           onEliminar: () => _eliminar(linea),
-          onCerrar: () => _ficha?.close(),
+          onCerrar: _cerrarFicha,
         ),
       ),
       showDragHandle: true,
       elevation: 8,
     );
     setState(() {
-      _fichaAbierta = linea.linea;
-      _fichaEnMisLineas = widget.misLineas.contiene(linea.linea);
+      _fichaAbierta = linea;
+      _fichaEnMisLineas = widget.misLineas.contiene(linea);
       _fichaEncuadrada = false;
       _ficha = controller;
     });
     controller.closed.then((_) {
-      // Si se abrió otra ficha mientras tanto, la Línea abierta ya es otra.
+      // Si se abrió otra ficha (o se cerró esta) mientras tanto, no hay nada que hacer.
       if (mounted && _ficha == controller) {
         setState(() {
           _fichaAbierta = null;
@@ -349,7 +363,19 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         });
       }
     });
+    if (linea.medio == Medio.colectivo) _loadRecorridos(linea.id);
     _encuadrarFicha();
+  }
+
+  /// Cierra la ficha. Su Línea deja de estar abierta en el acto: su Recorrido no se sigue
+  /// dibujando mientras la ficha baja.
+  void _cerrarFicha() {
+    final ficha = _ficha;
+    setState(() {
+      _fichaAbierta = null;
+      _ficha = null;
+    });
+    ficha?.close();
   }
 
   /// Encuadra el Recorrido de la ficha abierta, si ya llegó y todavía no se encuadró (o si se
@@ -357,8 +383,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void _encuadrarFicha({bool otraVez = false}) {
     if (_fichaEncuadrada && !otraVez) return;
     final linea = _fichaAbierta;
-    final recorrido = linea == null ? null : _subwayLineDe(LineaDeSubte.porId(linea.id))?.path;
-    if (recorrido == null || recorrido.isEmpty) return;
+    final recorrido = linea == null ? const <LatLng>[] : [for (final r in _recorridos(linea)) ...r];
+    if (recorrido.isEmpty) return;
     _fichaEncuadrada = true;
     // Cuando la ficha ya tiene tamaño, se sabe cuánto mapa queda a la vista.
     final key = _fichaKey;
@@ -388,14 +414,22 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     ));
   }
 
-  Future<void> _eliminar(LineaDeSubte linea) async {
+  Future<void> _eliminar(Linea linea) async {
     final messenger = ScaffoldMessenger.of(context);
-    _ficha?.close();
-    await eliminarConDeshacer(messenger, widget.misLineas, linea.linea);
+    _cerrarFicha();
+    await eliminarConDeshacer(messenger, widget.misLineas, linea);
   }
 
   void _openSheet(Widget sheet) {
     showModalBottomSheet<void>(context: context, showDragHandle: true, isScrollControlled: true, builder: (_) => sheet);
+  }
+
+  void _reintentar() {
+    _loadCatalogo();
+    _loadSubway();
+    _loadBikes();
+    _loadBuses();
+    if (_fichaAbierta case Linea(medio: Medio.colectivo, :final id)) _loadRecorridos(id);
   }
 
   // ---------------------------------------------------------------- UI
@@ -406,57 +440,64 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           if (LineaDeSubte.de(line) case final linea? when widget.misLineas.contiene(linea.linea)) line,
       ];
 
-  /// La Línea con la ficha abierta que no está en Mis líneas: el mapa dibuja solo su Recorrido y
-  /// sus Terminales, sin nada en vivo, hasta que se cierra la ficha (ADR 0002).
+  /// La Línea de Subte con la ficha abierta que no está en Mis líneas: el mapa dibuja solo su
+  /// Recorrido y sus Terminales, sin nada en vivo, hasta que se cierra la ficha (ADR 0002).
   SubwayLine? get _vistaPrevia => switch (_fichaAbierta) {
-        final linea? when linea.medio == Medio.subte && !widget.misLineas.contiene(linea) =>
-          _subwayLineDe(LineaDeSubte.porId(linea.id)),
+        final linea? when !widget.misLineas.contiene(linea) => switch (linea.deSubte) {
+            final subte? => _subwayLineDe(subte),
+            null => null,
+          },
         _ => null,
       };
 
-  static const _layerButtons = {
-    TransitLayer.buses: ('Colectivos', Icons.directions_bus, ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
-    TransitLayer.bikes: ('Ecobici', Icons.pedal_bike, ToggleTextButtonCustomization(borderColor: Color(0xFF00897B))),
-  };
+  /// Los Ramales de la Línea de Colectivo con la ficha abierta, con sus Recorridos. Con la ficha
+  /// cerrada no se dibuja ningún Recorrido de Colectivo.
+  List<BusBranch> get _ramalesAbiertos => switch (_fichaAbierta) {
+        Linea(medio: Medio.colectivo, :final id) => _recorridosDeColectivo[id]?.branches ?? const [],
+        _ => const [],
+      };
 
-  Widget _layerButton(TransitLayer layer) {
-    final (text, icon, customization) = _layerButtons[layer]!;
-    final on = _layers.contains(layer);
-    return ToggleTextButton(
-      text: text,
-      icon: icon,
-      isActive: on,
-      onTap: () => _toggleLayer(layer, !on),
-      customization: customization,
-    );
+  /// Los colectivos de las Líneas de Mis líneas. Se filtra también acá para que una Línea
+  /// eliminada desaparezca sin esperar al próximo pedido.
+  List<Bus> get _misBuses {
+    final mias = _misColectivos.toSet();
+    return [for (final bus in _buses) if (mias.contains(bus.lineId)) bus];
   }
 
   /// El botón de una Línea de Mis líneas: abre su ficha y queda activo mientras está abierta.
-  Widget _lineaButton(LineaDeSubte linea) => ToggleTextButton(
+  Widget _lineaButton(Linea linea) => ToggleTextButton(
         text: linea.id,
-        icon: Icons.subway_outlined,
-        isActive: _fichaAbierta == linea.linea,
+        icon: linea.medio.icono,
+        isActive: _fichaAbierta == linea,
         onTap: () => _toggleFicha(linea),
         customization: ToggleTextButtonCustomization(borderColor: linea.color),
       );
 
   @override
-  Widget build(BuildContext context) =>
-      ListenableBuilder(listenable: widget.misLineas, builder: (context, _) => _build(context));
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: Listenable.merge([widget.misLineas, _catalogo]),
+        builder: (context, _) => _build(context),
+      );
 
   Widget _build(BuildContext context) {
     final subwayLines = _mySubwayLines;
     final vistaPrevia = _vistaPrevia;
-    final encontradas = _consulta.trim().isEmpty ? const <Linea>[] : buscarLineas(_consulta);
+    final ramales = _ramalesAbiertos;
+    final terminalesDeColectivo = {
+      for (final ramal in ramales)
+        if ((ramal.terminales, ramal.path) case ((final desde, final hasta), [final inicio, ..., final fin])) ...{
+          (desde, inicio),
+          (hasta, fin),
+        },
+    };
+    final encontradas = _buscar(_consulta);
     final showStations = _zoom >= _minZoomSubwayStations;
-    final isEmpty = widget.misLineas.lineas.isEmpty && !_layers.contains(TransitLayer.bikes);
-    final showBikes = _layers.contains(TransitLayer.bikes) && _zoom >= _minZoomBikes;
-    final busesHidden =
-        _layers.contains(TransitLayer.buses) && _busLine == null && _zoom < _minZoomBuses;
+    final isEmpty = widget.misLineas.lineas.isEmpty && !_ecobici;
+    final showBikes = _ecobici && _zoom >= _minZoomBikes;
 
     return Scaffold(
       key: _scaffold,
-      drawer: AppDrawer(theme: widget.theme, misLineas: widget.misLineas),
+      drawer: AppDrawer(theme: widget.theme, misLineas: widget.misLineas, catalogo: _catalogo),
       body: Stack(
         children: [
           FlutterMap(
@@ -467,7 +508,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               minZoom: 10,
               maxZoom: 19,
               onPositionChanged: _onPositionChanged,
-              onMapReady: _loadBuses,
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
               backgroundColor: BaseMap.backgroundFor(Theme.of(context).brightness),
             ),
@@ -477,6 +517,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 polylines: [
                   for (final line in [...subwayLines, ?vistaPrevia])
                     Polyline(points: line.path, color: line.color, strokeWidth: 5),
+                  for (final ramal in ramales)
+                    if (ramal.path.isNotEmpty) Polyline(points: ramal.path, color: azulColectivo, strokeWidth: 4),
                 ],
               ),
               if (vistaPrevia != null && vistaPrevia.stations.isNotEmpty)
@@ -489,6 +531,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         height: 18,
                         child: SubwayStationMarker(line: vistaPrevia, station: terminal),
                       ),
+                  ],
+                ),
+              if (terminalesDeColectivo.isNotEmpty)
+                MarkerLayer(
+                  markers: [
+                    for (final (nombre, punto) in terminalesDeColectivo)
+                      Marker(point: punto, width: 18, height: 18, child: TerminalDeColectivoMarker(name: nombre)),
                   ],
                 ),
               if (showStations)
@@ -522,21 +571,20 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       ),
                   ],
                 ),
-              if (_layers.contains(TransitLayer.buses))
-                MarkerLayer(
-                  markers: [
-                    for (final bus in _buses)
-                      Marker(
-                        point: bus.position,
-                        width: 40,
-                        height: 22,
-                        child: GestureDetector(
-                          onTap: () => _openSheet(BusSheet(bus: bus)),
-                          child: BusMarker(bus: bus, highlighted: _busLine != null),
-                        ),
+              MarkerLayer(
+                markers: [
+                  for (final bus in _misBuses)
+                    Marker(
+                      point: bus.position,
+                      width: 40,
+                      height: 22,
+                      child: GestureDetector(
+                        onTap: () => _openSheet(BusSheet(bus: bus)),
+                        child: BusMarker(bus: bus),
                       ),
-                  ],
-                ),
+                    ),
+                ],
+              ),
               if (_myLocation case final here?)
                 MarkerLayer(markers: [Marker(point: here, width: 22, height: 22, child: const UserLocationMarker())]),
               const SimpleAttributionWidget(source: Text(AppConfig.mapAttribution)),
@@ -554,11 +602,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: _TopBar(
                       controller: _lineSearch,
-                      activeLine: _busLine,
                       alertCount: _alerts.length,
                       onChanged: (value) => setState(() => _consulta = value),
                       onSearch: _onSearchSubmitted,
-                      onClear: _clearLine,
                       onAlerts: () => _openSheet(AlertsSheet(alerts: _alerts, lines: _subwayLines)),
                     ),
                   ),
@@ -586,10 +632,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     fadeColor: BaseMap.backgroundFor(Theme.of(context).brightness),
                     children: [
-                      _layerButton(TransitLayer.bikes),
-                      for (final linea in widget.misLineas.lineasDe(Medio.subte)) _lineaButton(LineaDeSubte.porId(linea.id)),
-                      // Hasta que Colectivo entre en Mis líneas (#12) queda el botón de capa.
-                      _layerButton(TransitLayer.buses),
+                      ToggleTextButton(
+                        text: 'Ecobici',
+                        icon: Medio.ecobici.icono,
+                        isActive: _ecobici,
+                        onTap: _toggleEcobici,
+                        customization: const ToggleTextButtonCustomization(borderColor: Color(0xFF00897B)),
+                      ),
+                      for (final linea in widget.misLineas.lineas) _lineaButton(linea),
                     ],
                   ),
                   Padding(
@@ -599,12 +649,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       children: [
                         if (_api.demoLayers case final demo when demo.isNotEmpty)
                           _Banner(icon: Icons.science_outlined, text: 'Datos simulados: ${joinSpanish(demo)}'),
-                        if (_error case final error?)
-                          _Banner(icon: Icons.cloud_off, text: error, onTap: () {
-                            _loadSubway();
-                            _loadBikes();
-                            _loadBuses();
-                          }),
+                        if (_error case final error?) _Banner(icon: Icons.cloud_off, text: error, onTap: _reintentar),
                       ],
                     ),
                   ),
@@ -615,21 +660,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           if (isEmpty)
             Center(
               child: _EmptyMessage(
-                onAdd: () => Navigator.of(context).push(MisLineasScreen.route(widget.misLineas)),
-              ),
-            ),
-          if (busesHidden || _busesTruncated)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 32,
-              child: Center(
-                child: Chip(
-                  avatar: const Icon(Icons.zoom_in, size: 18),
-                  label: Text(busesHidden
-                      ? 'Acercá el mapa para ver colectivos'
-                      : 'Hay más colectivos: acercá el mapa o buscá una línea'),
-                ),
+                onAdd: () => Navigator.of(context).push(MisLineasScreen.route(widget.misLineas, _catalogo)),
               ),
             ),
         ],
@@ -646,20 +677,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.controller,
-    required this.activeLine,
     required this.alertCount,
     required this.onChanged,
     required this.onSearch,
-    required this.onClear,
     required this.onAlerts,
   });
 
   final TextEditingController controller;
-  final String? activeLine;
   final int alertCount;
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSearch;
-  final VoidCallback onClear;
   final VoidCallback onAlerts;
 
   @override
@@ -686,7 +713,6 @@ class _TopBar extends StatelessWidget {
               onSubmitted: onSearch,
             ),
           ),
-          if (activeLine != null) IconButton(tooltip: 'Ver todas', icon: const Icon(Icons.close), onPressed: onClear),
           IconButton(
             tooltip: 'Estado del subte',
             onPressed: onAlerts,

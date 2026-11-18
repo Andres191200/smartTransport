@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../data/models.dart';
+import 'lineas_comun.dart' show azulColectivo;
 
 /// Colores de disponibilidad compartidos entre el marcador y la hoja de Ecobici.
 Color bikeAvailabilityColor(BikeStation s) {
@@ -64,6 +65,28 @@ class SubwayStationMarker extends StatelessWidget {
           color: Colors.white,
           shape: BoxShape.circle,
           border: Border.all(color: line.color, width: 3.5),
+        ),
+      ),
+    );
+  }
+}
+
+/// Una Terminal de un Recorrido de Colectivo en la ficha abierta.
+class TerminalDeColectivoMarker extends StatelessWidget {
+  const TerminalDeColectivoMarker({super.key, required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: 'Terminal $name',
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: azulColectivo, width: 3.5),
         ),
       ),
     );

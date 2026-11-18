@@ -1,21 +1,32 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../data/catalogo_de_colectivos.dart';
 import '../data/lineas_de_subte.dart';
+import '../data/transit_api.dart';
 import '../settings/mis_lineas.dart';
 import 'lineas_comun.dart';
 
 // El buscador de Líneas: lo usan el mapa (tocar un resultado abre su ficha) y el "+" de la
-// pantalla Mis líneas (tocar un resultado lo agrega).
+// pantalla Mis líneas (tocar un resultado lo agrega). Busca en las Líneas de Subte y en el catálogo
+// de Colectivo.
 
-/// Los Medios en los que se puede buscar. Colectivo se suma con su catálogo (#12).
-const mediosBuscables = {Medio.subte};
+/// Los Medios en los que se puede buscar (Ecobici no tiene Líneas).
+const mediosBuscables = {Medio.colectivo, Medio.subte};
 
-/// Las Líneas de los [medios] pedidos cuyo nombre empieza como [consulta], en el orden en que se
-/// ofrecen. Ignora mayúsculas, tildes y un "Línea" o "Subte" adelante; una consulta vacía devuelve
-/// todas.
-List<Linea> buscarLineas(String consulta, {Set<Medio> medios = mediosBuscables}) {
-  final q = _normalizar(consulta).replaceFirst(RegExp(r'^((linea|subte)\b\s*)*'), '');
+/// Las Líneas de los [medios] pedidos cuyo nombre empieza como [consulta]: primero las de
+/// Colectivo, en el orden de [colectivos] (los números del catálogo), y después las de Subte.
+/// Ignora mayúsculas, tildes y un "Línea", "Subte" o "Colectivo" adelante; una consulta vacía
+/// devuelve todas.
+List<Linea> buscarLineas(
+  String consulta, {
+  Set<Medio> medios = mediosBuscables,
+  Iterable<String> colectivos = const [],
+}) {
+  final q = _normalizar(consulta).replaceFirst(RegExp(r'^((linea|subte|colectivo)\b\s*)*'), '');
   return [
+    if (medios.contains(Medio.colectivo))
+      for (final id in colectivos)
+        if (_normalizar(id).startsWith(q)) Linea(Medio.colectivo, id),
     if (medios.contains(Medio.subte))
       for (final l in LineaDeSubte.todas)
         if (_normalizar(l.id).startsWith(q)) l.linea,
@@ -55,10 +66,12 @@ class ResultadosDeBusqueda extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: misLineas,
-      builder: (context, _) => ListView(
+      // El catálogo de Colectivo tiene cientos de Líneas: se arman solo las que se ven.
+      builder: (context, _) => ListView.builder(
         shrinkWrap: true,
         padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [for (final linea in lineas) _resultado(linea)],
+        itemCount: lineas.length,
+        itemBuilder: (context, i) => _resultado(lineas[i]),
       ),
     );
   }
@@ -103,13 +116,15 @@ class YaAgregada extends StatelessWidget {
 /// Pantalla para buscar una Línea de un Medio y agregarla. Devuelve la Línea elegida, o null si
 /// el usuario volvió sin elegir.
 class AgregarLineaScreen extends StatefulWidget {
-  const AgregarLineaScreen({super.key, required this.misLineas, required this.medio});
+  const AgregarLineaScreen({super.key, required this.misLineas, required this.catalogo, required this.medio});
 
   final MisLineas misLineas;
+  final CatalogoDeColectivos catalogo;
   final Medio medio;
 
-  static Route<Linea> route(MisLineas misLineas, Medio medio) =>
-      MaterialPageRoute(builder: (_) => AgregarLineaScreen(misLineas: misLineas, medio: medio));
+  static Route<Linea> route(MisLineas misLineas, CatalogoDeColectivos catalogo, Medio medio) => MaterialPageRoute(
+        builder: (_) => AgregarLineaScreen(misLineas: misLineas, catalogo: catalogo, medio: medio),
+      );
 
   @override
   State<AgregarLineaScreen> createState() => _AgregarLineaScreenState();
@@ -119,8 +134,24 @@ class _AgregarLineaScreenState extends State<AgregarLineaScreen> {
   var _consulta = '';
 
   @override
+  void initState() {
+    super.initState();
+    _cargarCatalogo();
+  }
+
+  /// Si el catálogo de Colectivo no llegó (p. ej. sin conexión al abrir el mapa), se pide de nuevo.
+  /// El error queda en el catálogo y se muestra en pantalla.
+  Future<void> _cargarCatalogo() async {
+    if (widget.medio != Medio.colectivo) return;
+    try {
+      await widget.catalogo.cargar();
+    } on ApiException {
+      // Se muestra con el botón para reintentar.
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final lineas = buscarLineas(_consulta, medios: {widget.medio});
     return Scaffold(
       appBar: AppBar(
         title: TextField(
@@ -134,20 +165,41 @@ class _AgregarLineaScreenState extends State<AgregarLineaScreen> {
           onChanged: (value) => setState(() => _consulta = value),
         ),
       ),
-      body: lineas.isEmpty
-          ? Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'Ninguna línea de ${widget.medio.nombre} coincide con "${_consulta.trim()}".',
-                textAlign: TextAlign.center,
+      body: ListenableBuilder(listenable: widget.catalogo, builder: (context, _) => _resultados()),
+    );
+  }
+
+  Widget _resultados() {
+    final catalogo = widget.catalogo;
+    final lineas = buscarLineas(_consulta, medios: {widget.medio}, colectivos: [for (final l in catalogo.lineas) l.id]);
+    if (widget.medio == Medio.colectivo && !catalogo.cargado) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: catalogo.error == null
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(catalogo.error!, textAlign: TextAlign.center),
+                  TextButton(onPressed: _cargarCatalogo, child: const Text('Reintentar')),
+                ],
               ),
-            )
-          : ResultadosDeBusqueda(
-              lineas: lineas,
-              misLineas: widget.misLineas,
-              agregadasSeEligen: false,
-              onElegir: (linea) => Navigator.pop(context, linea),
-            ),
+      );
+    }
+    if (lineas.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'Ninguna línea de ${widget.medio.nombre} coincide con "${_consulta.trim()}".',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    return ResultadosDeBusqueda(
+      lineas: lineas,
+      misLineas: widget.misLineas,
+      agregadasSeEligen: false,
+      onElegir: (linea) => Navigator.pop(context, linea),
     );
   }
 }

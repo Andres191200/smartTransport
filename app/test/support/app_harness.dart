@@ -14,6 +14,7 @@ import 'package:smart_transport/settings/theme_controller.dart';
 /// Respuestas vacías de cada endpoint del backend: la app arranca sin transporte que mostrar.
 Map<String, Object> emptyBackendResponses() => {
       '/v1/buses': {'mode': 'live', 'vehicles': <Object>[], 'truncated': false},
+      '/v1/buses/lines': {'mode': 'live', 'lines': <Object>[]},
       '/v1/subway/lines': {'mode': 'live', 'lines': <Object>[]},
       '/v1/subway/alerts': {'mode': 'live', 'alerts': <Object>[]},
       '/v1/subway/arrivals': {'mode': 'live', 'arrivals': <Object>[]},
@@ -27,11 +28,13 @@ Map<String, Object> emptyBackendResponses() => {
 /// veces a [open] simula cerrar la app y volver a abrirla en el mismo teléfono.
 class AppHarness {
   /// [responses] reemplaza las respuestas del backend por ruta (p. ej. `/v1/subway/lines`);
-  /// las rutas que no se pasan responden vacías (ver [emptyBackendResponses]).
+  /// las rutas que no se pasan responden vacías (ver [emptyBackendResponses]). Una respuesta
+  /// puede ser una función del pedido (p. ej. según `?line=`): si devuelve null, la ruta da 404.
   AppHarness({Map<String, Object> responses = const {}})
       : responses = {...emptyBackendResponses(), ...responses};
 
-  /// Cuerpo JSON que devuelve el backend falso para cada ruta. Se puede cambiar entre aperturas.
+  /// Cuerpo JSON que devuelve el backend falso para cada ruta, o una `Object? Function(Uri)` que
+  /// lo arma según el pedido. Se puede cambiar entre aperturas.
   final Map<String, Object> responses;
 
   /// Rutas que tardan en responder: el backend falso espera a que se complete el Future.
@@ -48,7 +51,10 @@ class AppHarness {
   Future<http.Response> _handle(http.Request request) async {
     requests.add(request.url);
     await delays[request.url.path];
-    final body = responses[request.url.path];
+    final body = switch (responses[request.url.path]) {
+      final Object? Function(Uri) responder => responder(request.url),
+      final body => body,
+    };
     if (body == null) {
       return http.Response(jsonEncode({'error': 'Ruta desconocida: ${request.url.path}'}), 404);
     }

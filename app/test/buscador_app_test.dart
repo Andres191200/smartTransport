@@ -79,7 +79,7 @@ void main() {
     expect(station('Catedral'), findsOneWidget);
     expect(station('Congreso de Tucumán'), findsOneWidget);
     expect(station('Tribunales'), findsNothing);
-    expect(fila(tester), ['Ecobici', 'A', 'Colectivos'], reason: 'no está en Mis líneas');
+    expect(fila(tester), ['Ecobici', 'A'], reason: 'no está en Mis líneas');
 
     await tester.tap(enFicha(find.byTooltip('Cerrar')));
     await tester.pumpAndSettle();
@@ -103,7 +103,7 @@ void main() {
     // La ficha sigue abierta, ahora con "Eliminar", y su botón aparece activo en la fila.
     expect(enFicha(find.text('Línea D')), findsOneWidget);
     expect(enFicha(find.text('Eliminar')), findsOneWidget);
-    expect(fila(tester), ['Ecobici', 'D', 'Colectivos']);
+    expect(fila(tester), ['Ecobici', 'D']);
     expect(activo(tester, 'D'), isTrue);
     expect(station('Tribunales'), findsOneWidget, reason: 'ya se dibujan todas sus estaciones');
 
@@ -135,7 +135,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(ficha, findsNothing);
     expect(find.text('Eliminaste la D'), findsOneWidget);
-    expect(fila(tester), ['Ecobici', 'A', 'Colectivos']);
+    expect(fila(tester), ['Ecobici', 'A']);
     semantics.dispose();
   });
 
@@ -205,7 +205,7 @@ void main() {
     expect(find.widgetWithText(ListTile, 'Línea D'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(fila(tester), ['Ecobici', 'A', 'D', 'Colectivos']);
+    expect(fila(tester), ['Ecobici', 'A', 'D']);
     semantics.dispose();
   });
 }

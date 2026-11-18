@@ -10,8 +10,7 @@ void main() {
     final semantics = tester.ensureSemantics();
     await openWithLines(tester, ['H', 'A', 'D']);
 
-    // "Colectivos" es el botón de capa que sigue hasta que Colectivo entre en Mis líneas (#12).
-    expect(fila(tester), ['Ecobici', 'H', 'A', 'D', 'Colectivos']);
+    expect(fila(tester), ['Ecobici', 'H', 'A', 'D']);
     final d = tester.widget<ToggleTextButton>(find.widgetWithText(ToggleTextButton, 'D'));
     expect(d.customization.borderColor, const Color(0xFF00A975));
     expect(d.isActive, isFalse);
@@ -21,7 +20,7 @@ void main() {
     await addSubwayLine(tester, 'Premetro');
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(fila(tester), ['Ecobici', 'H', 'A', 'D', 'Premetro', 'Colectivos']);
+    expect(fila(tester), ['Ecobici', 'H', 'A', 'D', 'Premetro']);
     semantics.dispose();
   });
 
@@ -93,15 +92,19 @@ void main() {
     expect(station('Catedral'), findsOneWidget);
 
     await tester.tap(find.descendant(of: ficha, matching: find.text('Eliminar')));
+    // Mientras la ficha baja, la D ya no se dibuja (ni como vista previa).
+    await tester.pump();
+    expect(ficha, findsOneWidget);
+    expect(station('Catedral'), findsNothing);
     await tester.pumpAndSettle();
     expect(ficha, findsNothing);
     expect(find.text('Eliminaste la D'), findsOneWidget);
-    expect(fila(tester), ['Ecobici', 'A', 'H', 'Colectivos']);
+    expect(fila(tester), ['Ecobici', 'A', 'H']);
     expect(station('Catedral'), findsNothing);
 
     await tester.tap(find.text('Deshacer'));
     await tester.pumpAndSettle();
-    expect(fila(tester), ['Ecobici', 'A', 'D', 'H', 'Colectivos']);
+    expect(fila(tester), ['Ecobici', 'A', 'D', 'H']);
     expect(station('Catedral'), findsOneWidget);
     expect(activo(tester, 'D'), isFalse);
 

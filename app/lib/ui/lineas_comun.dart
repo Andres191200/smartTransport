@@ -20,18 +20,21 @@ extension MedioUI on Medio {
       };
 }
 
+/// Azul de las Líneas de Colectivo: el borde de sus botones y sus Recorridos.
+const azulColectivo = Color(0xFF0B5CAD);
+
 extension LineaUI on Linea {
+  /// La Línea de Subte, o null si es de otro Medio.
+  LineaDeSubte? get deSubte => medio == Medio.subte ? LineaDeSubte.porId(id) : null;
+
   /// "Línea D", "Premetro" o "Línea 60".
-  String get nombre => switch (medio) {
-        Medio.subte => LineaDeSubte.porId(id).nombre,
-        _ => 'Línea $id',
-      };
+  String get nombre => deSubte?.nombre ?? 'Línea $id';
 
   /// "la D", "el Premetro" o "el 60", para frases como "Eliminaste la D".
-  String get conArticulo => switch (medio) {
-        Medio.subte => LineaDeSubte.porId(id).conArticulo,
-        _ => 'el $id',
-      };
+  String get conArticulo => deSubte?.conArticulo ?? 'el $id';
+
+  /// El color de la Línea en Subte; azul en Colectivo.
+  Color get color => deSubte?.color ?? azulColectivo;
 }
 
 /// Saca la Línea de Mis líneas y muestra "Eliminaste la D · Deshacer".
@@ -69,6 +72,31 @@ class CirculoDeSubte extends StatelessWidget {
           linea.sigla,
           style: TextStyle(color: linea.textColor, fontWeight: FontWeight.w700, fontSize: size * 0.45),
         ),
+      ),
+    );
+  }
+}
+
+/// Cómo se reconoce una Línea en listas y fichas: el círculo de su color en Subte y el ícono de
+/// Colectivo sobre azul en Colectivo.
+class IconoDeLinea extends StatelessWidget {
+  const IconoDeLinea({super.key, required this.linea, this.size = 40});
+
+  final Linea linea;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (linea.deSubte case final subte?) return CirculoDeSubte(linea: subte, size: size);
+    return Semantics(
+      label: linea.nombre,
+      excludeSemantics: true,
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(color: azulColectivo, shape: BoxShape.circle),
+        child: Icon(linea.medio.icono, color: Colors.white, size: size * 0.55),
       ),
     );
   }
