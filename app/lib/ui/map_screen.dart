@@ -13,7 +13,9 @@ import '../settings/mis_lineas.dart';
 import '../settings/theme_controller.dart';
 import 'app_drawer.dart';
 import 'base_map.dart';
+import 'buscador_de_lineas.dart';
 import 'fila_de_botones.dart';
+import 'lineas_comun.dart';
 import 'markers.dart';
 import 'mis_lineas_screen.dart';
 import 'sheets.dart';
@@ -63,6 +65,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   final _overlay = GlobalKey();
   final _lineSearch = TextEditingController();
 
+  /// Lo escrito en el buscador: mientras no está vacío, se muestran las Líneas que coinciden.
+  String _consulta = '';
+
   /// Ecobici arranca según la preferencia de Mis líneas; lo que se prende o apaga después en el
   /// mapa no se guarda.
   late final _layers = {
@@ -81,9 +86,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   List<BikeStation> _bikes = const [];
   LatLng? _myLocation;
 
-  /// La Línea con la ficha abierta, si hay una. Su botón de la fila queda activo.
+  /// La Línea con la ficha abierta, si hay una. Su botón de la fila queda activo. Si no está en
+  /// Mis líneas, el mapa dibuja su vista previa.
   Linea? _fichaAbierta;
   PersistentBottomSheetController? _ficha;
+
+  /// Si la Línea de la ficha estaba en Mis líneas la última vez que cambiaron.
+  bool _fichaEnMisLineas = false;
+
+  /// Si la cámara ya encuadró el Recorrido de la ficha abierta (puede llegar después de abrirla).
+  bool _fichaEncuadrada = false;
 
   /// El contenido de la ficha abierta, para medirla. Cada ficha tiene su llave: la anterior
   /// puede seguir en pantalla mientras se cierra.
@@ -156,7 +168,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   Future<void> _loadSubway() => _guard(() async {
         final lines = await _api.subwayLines();
-        if (mounted) setState(() => _subwayLines = lines);
+        if (!mounted) return;
+        setState(() => _subwayLines = lines);
+        // Si la ficha se abrió antes de que llegaran los datos, ahora se completa.
+        _ficha?.setState?.call(() {});
+        _encuadrarFicha();
         await _loadAlerts();
       });
 
@@ -221,6 +237,22 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (layer == TransitLayer.buses) _loadBuses();
   }
 
+  /// Enter en el buscador: abre la primera Línea encontrada. Si no hay ninguna, busca los
+  /// colectivos en vivo de esa línea, como antes (hasta que Colectivo entre al buscador, #12).
+  void _onSearchSubmitted(String value) {
+    final encontradas = buscarLineas(value);
+    if (value.trim().isEmpty || encontradas.isEmpty) return _searchLine(value);
+    _elegirResultado(encontradas.first);
+  }
+
+  /// Tocar un resultado del buscador abre la ficha de la Línea.
+  void _elegirResultado(Linea linea) {
+    _lineSearch.clear();
+    setState(() => _consulta = '');
+    FocusScope.of(context).unfocus();
+    if (linea.medio == Medio.subte) _abrirFicha(LineaDeSubte.porId(linea.id));
+  }
+
   void _searchLine(String value) {
     final line = value.trim().toUpperCase();
     setState(() {
@@ -234,6 +266,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   void _clearLine() {
     _lineSearch.clear();
+    _consulta = '';
     _searchLine('');
   }
 
@@ -259,34 +292,52 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   /// Si la Línea de la ficha se eliminó (p. ej. desde la pantalla Mis líneas), la ficha se cierra.
+  /// La ficha de una vista previa sigue abierta, también cuando la Línea se agrega.
   void _onMisLineasChanged() {
-    if (_fichaAbierta case final linea? when !widget.misLineas.contiene(linea)) _ficha?.close();
+    final linea = _fichaAbierta;
+    if (linea == null) return;
+    final enMisLineas = widget.misLineas.contiene(linea);
+    if (_fichaEnMisLineas && !enMisLineas) _ficha?.close();
+    _fichaEnMisLineas = enMisLineas;
   }
 
   /// La Línea según el backend, o null si todavía no llegó.
   SubwayLine? _subwayLineDe(LineaDeSubte linea) =>
       _subwayLines.where((l) => LineaDeSubte.de(l)?.id == linea.id).firstOrNull;
 
-  /// Abre la ficha de la Línea sin tapar el mapa; si ya estaba abierta, la cierra.
+  /// El botón de una Línea de la fila abre su ficha; si ya estaba abierta, la cierra.
   void _toggleFicha(LineaDeSubte linea) {
     if (_fichaAbierta == linea.linea) {
       _ficha?.close();
-      return;
+    } else {
+      _abrirFicha(linea);
     }
-    final recorrido = _subwayLineDe(linea);
+  }
+
+  /// Abre la ficha de la Línea sin tapar el mapa y encuadra su Recorrido.
+  void _abrirFicha(LineaDeSubte linea) {
+    if (_fichaAbierta == linea.linea) return _encuadrarFicha(otraVez: true);
     final key = _fichaKey = GlobalKey();
     final controller = _scaffold.currentState!.showBottomSheet(
-      (context) => FichaDeLineaDeSubte(
-        key: key,
-        linea: linea,
-        recorrido: recorrido,
-        onEliminar: () => _eliminar(linea),
+      (context) => ListenableBuilder(
+        listenable: widget.misLineas,
+        builder: (context, _) => FichaDeLineaDeSubte(
+          key: key,
+          linea: linea,
+          subwayLine: _subwayLineDe(linea),
+          agregada: widget.misLineas.contiene(linea.linea),
+          onAgregar: () => widget.misLineas.agregar(linea.linea),
+          onEliminar: () => _eliminar(linea),
+          onCerrar: () => _ficha?.close(),
+        ),
       ),
       showDragHandle: true,
       elevation: 8,
     );
     setState(() {
       _fichaAbierta = linea.linea;
+      _fichaEnMisLineas = widget.misLineas.contiene(linea.linea);
+      _fichaEncuadrada = false;
       _ficha = controller;
     });
     controller.closed.then((_) {
@@ -298,10 +349,20 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         });
       }
     });
-    if (recorrido != null && recorrido.path.isNotEmpty) {
-      // Cuando la ficha ya tiene tamaño, se sabe cuánto mapa queda a la vista.
-      WidgetsBinding.instance.addPostFrameCallback((_) => _encuadrar(recorrido.path, key));
-    }
+    _encuadrarFicha();
+  }
+
+  /// Encuadra el Recorrido de la ficha abierta, si ya llegó y todavía no se encuadró (o si se
+  /// pide [otraVez]).
+  void _encuadrarFicha({bool otraVez = false}) {
+    if (_fichaEncuadrada && !otraVez) return;
+    final linea = _fichaAbierta;
+    final recorrido = linea == null ? null : _subwayLineDe(LineaDeSubte.porId(linea.id))?.path;
+    if (recorrido == null || recorrido.isEmpty) return;
+    _fichaEncuadrada = true;
+    // Cuando la ficha ya tiene tamaño, se sabe cuánto mapa queda a la vista.
+    final key = _fichaKey;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _encuadrar(recorrido, key));
   }
 
   /// Mueve la cámara para que el Recorrido entre completo entre lo que tapa el mapa arriba y la
@@ -330,7 +391,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Future<void> _eliminar(LineaDeSubte linea) async {
     final messenger = ScaffoldMessenger.of(context);
     _ficha?.close();
-    await eliminarConDeshacer(messenger, widget.misLineas, linea);
+    await eliminarConDeshacer(messenger, widget.misLineas, linea.linea);
   }
 
   void _openSheet(Widget sheet) {
@@ -344,6 +405,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         for (final line in _subwayLines)
           if (LineaDeSubte.de(line) case final linea? when widget.misLineas.contiene(linea.linea)) line,
       ];
+
+  /// La Línea con la ficha abierta que no está en Mis líneas: el mapa dibuja solo su Recorrido y
+  /// sus Terminales, sin nada en vivo, hasta que se cierra la ficha (ADR 0002).
+  SubwayLine? get _vistaPrevia => switch (_fichaAbierta) {
+        final linea? when linea.medio == Medio.subte && !widget.misLineas.contiene(linea) =>
+          _subwayLineDe(LineaDeSubte.porId(linea.id)),
+        _ => null,
+      };
 
   static const _layerButtons = {
     TransitLayer.buses: ('Colectivos', Icons.directions_bus, ToggleTextButtonCustomization(borderColor: Color(0xFF0B5CAD))),
@@ -377,6 +446,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   Widget _build(BuildContext context) {
     final subwayLines = _mySubwayLines;
+    final vistaPrevia = _vistaPrevia;
+    final encontradas = _consulta.trim().isEmpty ? const <Linea>[] : buscarLineas(_consulta);
     final showStations = _zoom >= _minZoomSubwayStations;
     final isEmpty = widget.misLineas.lineas.isEmpty && !_layers.contains(TransitLayer.bikes);
     final showBikes = _layers.contains(TransitLayer.bikes) && _zoom >= _minZoomBikes;
@@ -404,10 +475,22 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               widget.baseMap,
               PolylineLayer(
                 polylines: [
-                  for (final line in subwayLines)
+                  for (final line in [...subwayLines, ?vistaPrevia])
                     Polyline(points: line.path, color: line.color, strokeWidth: 5),
                 ],
               ),
+              if (vistaPrevia != null && vistaPrevia.stations.isNotEmpty)
+                MarkerLayer(
+                  markers: [
+                    for (final terminal in {vistaPrevia.stations.first, vistaPrevia.stations.last})
+                      Marker(
+                        point: terminal.position,
+                        width: 18,
+                        height: 18,
+                        child: SubwayStationMarker(line: vistaPrevia, station: terminal),
+                      ),
+                  ],
+                ),
               if (showStations)
                 MarkerLayer(
                   markers: [
@@ -473,11 +556,30 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       controller: _lineSearch,
                       activeLine: _busLine,
                       alertCount: _alerts.length,
-                      onSearch: _searchLine,
+                      onChanged: (value) => setState(() => _consulta = value),
+                      onSearch: _onSearchSubmitted,
                       onClear: _clearLine,
                       onAlerts: () => _openSheet(AlertsSheet(alerts: _alerts, lines: _subwayLines)),
                     ),
                   ),
+                  if (encontradas.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                      child: Material(
+                        elevation: 3,
+                        borderRadius: BorderRadius.circular(16),
+                        clipBehavior: Clip.antiAlias,
+                        color: Theme.of(context).colorScheme.surface,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 320),
+                          child: ResultadosDeBusqueda(
+                            lineas: encontradas,
+                            misLineas: widget.misLineas,
+                            onElegir: _elegirResultado,
+                          ),
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   // La fila ocupa todo el ancho para que los botones se deslicen hasta el borde.
                   FilaDeBotones(
@@ -546,6 +648,7 @@ class _TopBar extends StatelessWidget {
     required this.controller,
     required this.activeLine,
     required this.alertCount,
+    required this.onChanged,
     required this.onSearch,
     required this.onClear,
     required this.onAlerts,
@@ -554,6 +657,7 @@ class _TopBar extends StatelessWidget {
   final TextEditingController controller;
   final String? activeLine;
   final int alertCount;
+  final ValueChanged<String> onChanged;
   final ValueChanged<String> onSearch;
   final VoidCallback onClear;
   final VoidCallback onAlerts;
@@ -577,7 +681,8 @@ class _TopBar extends StatelessWidget {
               controller: controller,
               textInputAction: TextInputAction.search,
               textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(hintText: 'Buscar línea de colectivo', border: InputBorder.none),
+              decoration: const InputDecoration(hintText: 'Buscar línea', border: InputBorder.none),
+              onChanged: onChanged,
               onSubmitted: onSearch,
             ),
           ),

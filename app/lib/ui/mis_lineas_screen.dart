@@ -2,9 +2,12 @@ import 'package:material_ui/material_ui.dart';
 
 import '../data/lineas_de_subte.dart';
 import '../settings/mis_lineas.dart';
+import 'buscador_de_lineas.dart';
+import 'lineas_comun.dart';
 
 /// Pantalla Mis líneas: las Líneas del usuario agrupadas por Medio, para agregarlas y sacarlas.
-/// Por ahora tiene los grupos Subte y Ecobici.
+/// Por ahora tiene los grupos Subte y Ecobici. El "+" de la barra pregunta el Medio y abre el
+/// buscador de ese Medio.
 class MisLineasScreen extends StatelessWidget {
   const MisLineasScreen({super.key, required this.misLineas});
 
@@ -16,7 +19,12 @@ class MisLineasScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mis líneas')),
+      appBar: AppBar(
+        title: const Text('Mis líneas'),
+        actions: [
+          IconButton(tooltip: 'Agregar línea', icon: const Icon(Icons.add), onPressed: () => _agregar(context)),
+        ],
+      ),
       body: ListenableBuilder(
         listenable: misLineas,
         builder: (context, _) => ListView(
@@ -24,6 +32,37 @@ class MisLineasScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Pregunta de qué Medio es la Línea y abre el buscador filtrado por ese Medio.
+  Future<void> _agregar(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final medio = await showModalBottomSheet<Medio>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text('¿De qué Medio es la línea?', style: Theme.of(context).textTheme.titleLarge),
+            ),
+            for (final medio in mediosBuscables)
+              ListTile(
+                leading: Icon(medio.icono),
+                title: Text(medio.nombre),
+                onTap: () => Navigator.pop(context, medio),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (medio == null) return;
+    final linea = await navigator.push(AgregarLineaScreen.route(misLineas, medio));
+    if (linea != null) await misLineas.agregar(linea);
   }
 }
 
@@ -117,21 +156,7 @@ class _GrupoSubte extends StatelessWidget {
   }
 
   Future<void> _eliminar(BuildContext context, LineaDeSubte linea) =>
-      eliminarConDeshacer(ScaffoldMessenger.of(context), misLineas, linea);
-}
-
-/// Saca la Línea de Mis líneas y muestra "Eliminaste la D · Deshacer".
-Future<void> eliminarConDeshacer(ScaffoldMessengerState messenger, MisLineas misLineas, LineaDeSubte linea) async {
-  final eliminada = await misLineas.eliminar(linea.linea);
-  if (eliminada == null) return;
-  messenger
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-      content: Text('Eliminaste ${linea.conArticulo}'),
-      // Se va solo, como cualquier aviso: deshacer es una oportunidad, no una pregunta.
-      persist: false,
-      action: SnackBarAction(label: 'Deshacer', onPressed: () => misLineas.deshacer(eliminada)),
-    ));
+      eliminarConDeshacer(ScaffoldMessenger.of(context), misLineas, linea.linea);
 }
 
 /// Ecobici no tiene Líneas: su grupo solo decide si las estaciones se muestran al abrir la app,
@@ -162,32 +187,6 @@ class _GrupoEcobici extends StatelessWidget {
           onChanged: (on) => on ? misLineas.elegir(Medio.ecobici) : misLineas.quitar(Medio.ecobici),
         ),
       ],
-    );
-  }
-}
-
-/// Círculo del color de una Línea de Subte con su letra, como en las estaciones.
-class CirculoDeSubte extends StatelessWidget {
-  const CirculoDeSubte({super.key, required this.linea, this.size = 40});
-
-  final LineaDeSubte linea;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: linea.nombre,
-      excludeSemantics: true,
-      child: Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: linea.color, shape: BoxShape.circle),
-        child: Text(
-          linea.sigla,
-          style: TextStyle(color: linea.textColor, fontWeight: FontWeight.w700, fontSize: size * 0.45),
-        ),
-      ),
     );
   }
 }
