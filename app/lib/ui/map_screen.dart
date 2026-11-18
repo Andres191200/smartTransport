@@ -30,10 +30,13 @@ String joinSpanish(List<String> items) => items.length <= 1
     : '${items.sublist(0, items.length - 1).join(', ')} y ${items.last}';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key, required this.api, required this.theme});
+  const MapScreen({super.key, required this.api, required this.theme, this.baseMap = const BaseMap()});
 
   final TransitApi api;
   final ThemeController theme;
+
+  /// Capa del mapa base: el primer hijo de FlutterMap (ver [BaseMap]).
+  final Widget baseMap;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -253,7 +256,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               backgroundColor: BaseMap.backgroundFor(Theme.of(context).brightness),
             ),
             children: [
-              const BaseMap(),
+              widget.baseMap,
               if (_layers.contains(TransitLayer.subway))
                 PolylineLayer(
                   polylines: [

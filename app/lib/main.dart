@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'config.dart';
 import 'data/transit_api.dart';
 import 'settings/theme_controller.dart';
+import 'ui/base_map.dart';
 import 'ui/map_screen.dart';
 
 Future<void> main() async {
@@ -13,10 +14,13 @@ Future<void> main() async {
 }
 
 class SmartTransportApp extends StatelessWidget {
-  const SmartTransportApp({super.key, required this.api, required this.theme});
+  const SmartTransportApp({super.key, required this.api, required this.theme, this.baseMap = const BaseMap()});
 
   final TransitApi api;
   final ThemeController theme;
+
+  /// Capa del mapa base, debajo del transporte. Los tests la reemplazan por una que no usa la red.
+  final Widget baseMap;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +33,7 @@ class SmartTransportApp extends StatelessWidget {
         theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: seed)),
         darkTheme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark)),
         themeMode: theme.mode,
-        home: MapScreen(api: api, theme: theme),
+        home: MapScreen(api: api, theme: theme, baseMap: baseMap),
       ),
     );
   }
