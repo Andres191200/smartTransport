@@ -440,6 +440,15 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           if (LineaDeSubte.de(line) case final linea? when widget.misLineas.contiene(linea.linea)) line,
       ];
 
+  /// Los avisos del subte: primero los de las Líneas de Subte de Mis líneas y después el resto,
+  /// cada grupo en el orden en que llegaron. Los avisos nombran las Líneas con los ids del backend
+  /// ("LineaD"), así que se cruzan con las Líneas de Subte del backend que están en Mis líneas.
+  ({List<ServiceAlert> mios, List<ServiceAlert> otros}) get _avisos {
+    final mias = {for (final line in _mySubwayLines) line.id};
+    final mios = [for (final alert in _alerts) if (alert.lineIds.any(mias.contains)) alert];
+    return (mios: mios, otros: [for (final alert in _alerts) if (!mios.contains(alert)) alert]);
+  }
+
   /// La Línea de Subte con la ficha abierta que no está en Mis líneas: el mapa dibuja solo su
   /// Recorrido y sus Terminales, sin nada en vivo, hasta que se cierra la ficha (ADR 0002).
   SubwayLine? get _vistaPrevia => switch (_fichaAbierta) {
@@ -491,6 +500,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         },
     };
     final encontradas = _buscar(_consulta);
+    final avisos = _avisos;
     final showStations = _zoom >= _minZoomSubwayStations;
     final isEmpty = widget.misLineas.lineas.isEmpty && !_ecobici;
     final showBikes = _ecobici && _zoom >= _minZoomBikes;
@@ -602,10 +612,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: _TopBar(
                       controller: _lineSearch,
-                      alertCount: _alerts.length,
+                      alertCount: avisos.mios.length,
                       onChanged: (value) => setState(() => _consulta = value),
                       onSearch: _onSearchSubmitted,
-                      onAlerts: () => _openSheet(AlertsSheet(alerts: _alerts, lines: _subwayLines)),
+                      onAlerts: () =>
+                          _openSheet(AlertsSheet(alerts: [...avisos.mios, ...avisos.otros], lines: _subwayLines)),
                     ),
                   ),
                   if (encontradas.isNotEmpty)
@@ -684,6 +695,8 @@ class _TopBar extends StatelessWidget {
   });
 
   final TextEditingController controller;
+
+  /// Los avisos del subte de las Líneas de Mis líneas: sin ninguno, el ícono no muestra número.
   final int alertCount;
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSearch;
