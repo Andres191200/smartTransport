@@ -7,8 +7,10 @@ import 'buscador_de_lineas.dart';
 import 'lineas_comun.dart';
 
 /// Pantalla Mis líneas: las Líneas del usuario agrupadas por Medio, para agregarlas y sacarlas.
-/// Tiene los grupos Colectivo, Subte y Ecobici. El "+" de la barra pregunta el Medio y abre el
-/// buscador de ese Medio.
+/// Colectivo y Subte tienen su grupo si el usuario eligió el Medio o le agregó una Línea (y lo
+/// mantienen aunque se queden sin Líneas). Ecobici tiene siempre el suyo: su interruptor es la
+/// forma de elegirlo. El "+" de la barra pregunta el Medio y abre el buscador de ese Medio, así
+/// que sirve también para los Medios que todavía no tienen grupo (p. ej. después de "Saltar").
 class MisLineasScreen extends StatelessWidget {
   const MisLineasScreen({super.key, required this.misLineas, required this.catalogo});
 
@@ -29,21 +31,34 @@ class MisLineasScreen extends StatelessWidget {
       ),
       body: ListenableBuilder(
         listenable: misLineas,
-        builder: (context, _) => ListView(
-          children: [
-            _GrupoDeLineas(
-              misLineas: misLineas,
-              medio: Medio.colectivo,
-              onAgregar: (context) => _buscarYAgregar(context, Medio.colectivo),
-            ),
-            _GrupoDeLineas(
-              misLineas: misLineas,
-              medio: Medio.subte,
-              onAgregar: _subteDisponibles.isEmpty ? null : _agregarSubte,
-            ),
-            _GrupoEcobici(misLineas: misLineas),
-          ],
-        ),
+        builder: (context, _) {
+          final medios = misLineas.medios;
+          return ListView(
+            children: [
+              if (!medios.contains(Medio.colectivo) && !medios.contains(Medio.subte))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Text(
+                    'Todavía no agregaste líneas. Tocá + arriba para agregar una de Colectivo o de Subte.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
+                  ),
+                ),
+              if (medios.contains(Medio.colectivo))
+                _GrupoDeLineas(
+                  misLineas: misLineas,
+                  medio: Medio.colectivo,
+                  onAgregar: (context) => _buscarYAgregar(context, Medio.colectivo),
+                ),
+              if (medios.contains(Medio.subte))
+                _GrupoDeLineas(
+                  misLineas: misLineas,
+                  medio: Medio.subte,
+                  onAgregar: _subteDisponibles.isEmpty ? null : _agregarSubte,
+                ),
+              _GrupoEcobici(misLineas: misLineas),
+            ],
+          );
+        },
       ),
     );
   }
