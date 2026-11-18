@@ -38,29 +38,69 @@ class LineaEliminada {
   final int posicion;
 }
 
-/// Mis líneas y los Medios elegidos por el usuario, guardados en el dispositivo.
+/// Mis líneas y los Medios elegidos por el usuario, guardados en el dispositivo, junto con el
+/// Onboarding completado.
 ///
 /// Reglas: las Líneas quedan en orden de agregado; agregar una Línea suma su Medio; quitar un
 /// Medio descarta sus Líneas; y el grupo de un Medio no se borra solo cuando se queda sin Líneas.
 class MisLineas extends ChangeNotifier {
-  MisLineas._(this._prefs, this._medios, this._lineas);
+  MisLineas._(this._prefs, this._medios, this._lineas, this._versionDelOnboarding, this._onboardingGuardado);
+
+  /// La versión del Onboarding de esta app. Si cambia el Onboarding y se quiere volver a mostrar
+  /// a quien ya lo completó, se sube este número.
+  static const versionDelOnboarding = 1;
 
   static const _keyMedios = 'mis_lineas.medios';
   static const _keyLineas = 'mis_lineas.lineas';
+  static const _keyOnboarding = 'mis_lineas.onboarding_completado';
 
   final SharedPreferencesAsync _prefs;
   final Set<Medio> _medios;
   final List<Linea> _lineas;
 
-  static Future<MisLineas> load([SharedPreferencesAsync? prefs]) async {
+  /// La versión del Onboarding que tiene que estar completada ([versionDelOnboarding], salvo en
+  /// los tests).
+  final int _versionDelOnboarding;
+
+  /// La versión del último Onboarding completado, o null si nunca se completó.
+  int? _onboardingGuardado;
+
+  static Future<MisLineas> load({
+    SharedPreferencesAsync? prefs,
+    int versionDelOnboarding = MisLineas.versionDelOnboarding,
+  }) async {
     prefs ??= SharedPreferencesAsync();
     final medios = await prefs.getStringList(_keyMedios) ?? const [];
     final lineas = await prefs.getStringList(_keyLineas) ?? const [];
+    final onboarding = await prefs.getInt(_keyOnboarding);
     return MisLineas._(
       prefs,
       {for (final m in medios) ...Medio.values.where((v) => v.name == m)},
       [for (final l in lineas) ?Linea._parse(l)],
+      versionDelOnboarding,
+      onboarding,
     );
+  }
+
+  /// Si el usuario ya completó el Onboarding de esta versión. Si no, la app arranca en el
+  /// Onboarding.
+  bool get onboardingCompletado => (_onboardingGuardado ?? 0) >= _versionDelOnboarding;
+
+  /// Guarda de una vez lo elegido en el Onboarding (reemplaza los Medios y las Líneas) y lo marca
+  /// como completado. Las Líneas suman su Medio, como al [agregar]. "Saltar" lo completa sin
+  /// Medios ni Líneas.
+  Future<void> completarOnboarding({required Set<Medio> medios, required List<Linea> lineas}) async {
+    _medios
+      ..clear()
+      ..addAll(medios)
+      ..addAll(lineas.map((l) => l.medio));
+    _lineas
+      ..clear()
+      ..addAll(lineas.toSet());
+    _onboardingGuardado = _versionDelOnboarding;
+    notifyListeners();
+    await _guardar();
+    await _prefs.setInt(_keyOnboarding, _versionDelOnboarding);
   }
 
   /// Medios elegidos. Que Ecobici esté elegido significa "mostrar estaciones al abrir la app".

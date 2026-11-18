@@ -96,6 +96,56 @@ void main() {
     expect((await MisLineas.load()).lineas, isEmpty);
   });
 
+  group('Onboarding', () {
+    test('sin nada guardado no está completado', () async {
+      expect((await MisLineas.load()).onboardingCompletado, isFalse);
+    });
+
+    test('completarlo guarda sus Medios y Líneas, en orden, y queda completado al reabrir', () async {
+      final mis = await MisLineas.load();
+      await mis.completarOnboarding(medios: {Medio.subte, Medio.ecobici}, lineas: [h, a]);
+      expect(mis.onboardingCompletado, isTrue);
+
+      final reabierto = await MisLineas.load();
+      expect(reabierto.onboardingCompletado, isTrue);
+      expect(reabierto.medios, {Medio.subte, Medio.ecobici});
+      expect(reabierto.lineas, [h, a]);
+    });
+
+    test('completarlo sin Medios ni Líneas ("Saltar") también cuenta como completado', () async {
+      await (await MisLineas.load()).completarOnboarding(medios: {}, lineas: []);
+
+      final reabierto = await MisLineas.load();
+      expect(reabierto.onboardingCompletado, isTrue);
+      expect(reabierto.medios, isEmpty);
+      expect(reabierto.lineas, isEmpty);
+    });
+
+    test('las Líneas suman su Medio aunque no venga entre los Medios', () async {
+      final mis = await MisLineas.load();
+      await mis.completarOnboarding(medios: {Medio.ecobici}, lineas: [d]);
+      expect(mis.medios, {Medio.subte, Medio.ecobici});
+    });
+
+    test('se guarda con su versión: si el Onboarding cambia de versión, se vuelve a mostrar', () async {
+      await (await MisLineas.load(versionDelOnboarding: 1)).completarOnboarding(medios: {Medio.subte}, lineas: [d]);
+      expect((await MisLineas.load(versionDelOnboarding: 1)).onboardingCompletado, isTrue);
+
+      final nuevaVersion = await MisLineas.load(versionDelOnboarding: 2);
+      expect(nuevaVersion.onboardingCompletado, isFalse);
+      expect(nuevaVersion.lineas, [d], reason: 'Mis líneas no se pierde por cambiar el Onboarding');
+
+      await nuevaVersion.completarOnboarding(medios: {Medio.subte}, lineas: [d]);
+      expect((await MisLineas.load(versionDelOnboarding: 2)).onboardingCompletado, isTrue);
+    });
+
+    test('la app usa la versión actual del Onboarding', () async {
+      await (await MisLineas.load(versionDelOnboarding: MisLineas.versionDelOnboarding))
+          .completarOnboarding(medios: {}, lineas: []);
+      expect((await MisLineas.load()).onboardingCompletado, isTrue);
+    });
+  });
+
   test('avisa a quien lo escucha cuando cambia', () async {
     final mis = await MisLineas.load();
     var avisos = 0;
@@ -106,7 +156,8 @@ void main() {
     await mis.deshacer(eliminada!);
     await mis.elegir(Medio.ecobici);
     await mis.quitar(Medio.ecobici);
+    await mis.completarOnboarding(medios: {Medio.ecobici}, lineas: [a]);
 
-    expect(avisos, 5);
+    expect(avisos, 6);
   });
 }

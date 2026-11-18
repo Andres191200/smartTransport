@@ -26,12 +26,29 @@ Map<String, Object> emptyBackendResponses() => {
 ///
 /// Las preferencias se guardan en [prefs] entre una apertura y otra, así que llamar dos
 /// veces a [open] simula cerrar la app y volver a abrirla en el mismo teléfono.
+///
+/// Salvo que se pida lo contrario con [onboardingCompletado], el teléfono ya completó el
+/// Onboarding eligiendo Colectivo y Subte, sin Líneas y con Ecobici apagada: la app abre directo
+/// en el mapa vacío, y la pantalla Mis líneas muestra los grupos Colectivo y Subte con su "+".
 class AppHarness {
   /// [responses] reemplaza las respuestas del backend por ruta (p. ej. `/v1/subway/lines`);
   /// las rutas que no se pasan responden vacías (ver [emptyBackendResponses]). Una respuesta
   /// puede ser una función del pedido (p. ej. según `?line=`): si devuelve null, la ruta da 404.
-  AppHarness({Map<String, Object> responses = const {}})
+  ///
+  /// Con [onboardingCompletado] en false es la primera apertura en un teléfono nuevo: la app
+  /// arranca en el Onboarding.
+  AppHarness({Map<String, Object> responses = const {}, this.onboardingCompletado = true})
       : responses = {...emptyBackendResponses(), ...responses};
+
+  final bool onboardingCompletado;
+
+  /// Lo que responde el usuario cuando el teléfono le pide el permiso de ubicación.
+  bool concedeLaUbicacion = true;
+
+  /// Cuántas veces la app pidió el permiso de ubicación.
+  int pedidosDeUbicacion = 0;
+
+  var _abierta = false;
 
   /// Cuerpo JSON que devuelve el backend falso para cada ruta, o una `Object? Function(Uri)` que
   /// lo arma según el pedido. Se puede cambiar entre aperturas.
@@ -75,6 +92,10 @@ class AppHarness {
     addTearDown(tester.view.reset);
 
     SharedPreferencesAsyncPlatform.instance = prefs;
+    if (!_abierta && onboardingCompletado) {
+      await (await MisLineas.load()).completarOnboarding(medios: {Medio.colectivo, Medio.subte}, lineas: const []);
+    }
+    _abierta = true;
     final theme = await ThemeController.load();
     final misLineas = await MisLineas.load();
     await tester.pumpWidget(SmartTransportApp(
@@ -83,6 +104,10 @@ class AppHarness {
       theme: theme,
       misLineas: misLineas,
       baseMap: const FakeBaseMap(),
+      pedirPermisoDeUbicacion: () async {
+        pedidosDeUbicacion++;
+        return concedeLaUbicacion;
+      },
     ));
     await tester.pumpAndSettle();
   }
