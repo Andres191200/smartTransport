@@ -58,7 +58,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   final _map = MapController();
   final _lineSearch = TextEditingController();
 
-  final _layers = {...TransitLayer.values};
+  /// Ecobici arranca según la preferencia de Mis líneas; lo que se prende o apaga después en el
+  /// mapa no se guarda.
+  late final _layers = {
+    TransitLayer.buses,
+    if (widget.misLineas.medios.contains(Medio.ecobici)) TransitLayer.bikes,
+  };
   double _zoom = 14;
 
   List<Bus> _buses = const [];

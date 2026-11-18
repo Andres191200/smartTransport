@@ -140,8 +140,12 @@ void main() {
   testWidgets('sin Líneas y con Ecobici apagada, el mapa invita a agregar líneas', (tester) async {
     final app = AppHarness(responses: {'/v1/subway/lines': subwayLines()});
     await app.open(tester);
-    expect(find.text('Agregar líneas'), findsNothing, reason: 'Ecobici está prendida');
+    expect(find.text('Agregar líneas'), findsOneWidget);
 
+    // Con Ecobici prendida el mapa ya muestra algo.
+    await tester.tap(find.widgetWithText(InkWell, 'Ecobici'));
+    await tester.pumpAndSettle();
+    expect(find.text('Agregar líneas'), findsNothing);
     await tester.tap(find.widgetWithText(InkWell, 'Ecobici'));
     await tester.pumpAndSettle();
     expect(find.text('Agregar líneas'), findsOneWidget);

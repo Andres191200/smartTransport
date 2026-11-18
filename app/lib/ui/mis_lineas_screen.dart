@@ -4,7 +4,7 @@ import '../data/lineas_de_subte.dart';
 import '../settings/mis_lineas.dart';
 
 /// Pantalla Mis líneas: las Líneas del usuario agrupadas por Medio, para agregarlas y sacarlas.
-/// Por ahora solo tiene el grupo Subte.
+/// Por ahora tiene los grupos Subte y Ecobici.
 class MisLineasScreen extends StatelessWidget {
   const MisLineasScreen({super.key, required this.misLineas});
 
@@ -20,7 +20,7 @@ class MisLineasScreen extends StatelessWidget {
       body: ListenableBuilder(
         listenable: misLineas,
         builder: (context, _) => ListView(
-          children: [_GrupoSubte(misLineas: misLineas)],
+          children: [_GrupoSubte(misLineas: misLineas), _GrupoEcobici(misLineas: misLineas)],
         ),
       ),
     );
@@ -128,6 +128,38 @@ class _GrupoSubte extends StatelessWidget {
         persist: false,
         action: SnackBarAction(label: 'Deshacer', onPressed: () => misLineas.deshacer(eliminada)),
       ));
+  }
+}
+
+/// Ecobici no tiene Líneas: su grupo solo decide si las estaciones se muestran al abrir la app,
+/// que es lo mismo que tener Ecobici entre los Medios elegidos.
+class _GrupoEcobici extends StatelessWidget {
+  const _GrupoEcobici({required this.misLineas});
+
+  final MisLineas misLineas;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Row(
+            children: [
+              const Icon(Icons.pedal_bike),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Ecobici', style: Theme.of(context).textTheme.titleMedium)),
+            ],
+          ),
+        ),
+        SwitchListTile(
+          title: const Text('Mostrar estaciones al abrir la app'),
+          value: misLineas.medios.contains(Medio.ecobici),
+          onChanged: (on) => on ? misLineas.elegir(Medio.ecobici) : misLineas.quitar(Medio.ecobici),
+        ),
+      ],
+    );
   }
 }
 
