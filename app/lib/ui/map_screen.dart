@@ -27,6 +27,7 @@ import 'toggle_text_button.dart';
 /// ven con cualquier zoom: son solo los de Mis líneas.
 const _minZoomSubwayStations = 12.5;
 const _minZoomBikes = 13.5;
+const _initialZoom = 14.0;
 
 const _obelisco = LatLng(-34.6037, -58.3816);
 
@@ -78,7 +79,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   /// Ecobici arranca según la preferencia de Mis líneas; lo que se prende o apaga después en el
   /// mapa no se guarda.
   late bool _ecobici = widget.misLineas.medios.contains(Medio.ecobici);
-  double _zoom = 14;
+
+  /// Qué capas permite dibujar el zoom de la cámara. Se guardan estos umbrales y no el zoom: así
+  /// la pantalla se reconstruye solo cuando un gesto de zoom cruza uno, y no en cada cuadro.
+  bool _zoomParaEstacionesDeSubte = _initialZoom >= _minZoomSubwayStations;
+  bool _zoomParaEcobici = _initialZoom >= _minZoomBikes;
 
   /// Los colectivos en vivo de las Líneas de Colectivo de Mis líneas.
   List<Bus> _buses = const [];
@@ -238,7 +243,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
-    if (camera.zoom != _zoom) setState(() => _zoom = camera.zoom);
+    final subte = camera.zoom >= _minZoomSubwayStations;
+    final ecobici = camera.zoom >= _minZoomBikes;
+    if (subte == _zoomParaEstacionesDeSubte && ecobici == _zoomParaEcobici) return;
+    setState(() {
+      _zoomParaEstacionesDeSubte = subte;
+      _zoomParaEcobici = ecobici;
+    });
   }
 
   // ---------------------------------------------------------------- acciones
@@ -511,9 +522,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     };
     final encontradas = _buscar(_consulta);
     final avisos = _avisos;
-    final showStations = _zoom >= _minZoomSubwayStations;
+    final showStations = _zoomParaEstacionesDeSubte;
     final isEmpty = widget.misLineas.lineas.isEmpty && !_ecobici;
-    final showBikes = _ecobici && _zoom >= _minZoomBikes;
+    final showBikes = _ecobici && _zoomParaEcobici;
 
     return Scaffold(
       key: _scaffold,
@@ -524,7 +535,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             mapController: _map,
             options: MapOptions(
               initialCenter: _obelisco,
-              initialZoom: _zoom,
+              initialZoom: _initialZoom,
               minZoom: 10,
               maxZoom: 19,
               onPositionChanged: _onPositionChanged,
