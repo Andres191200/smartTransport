@@ -1,3 +1,4 @@
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:smart_transport/ui/buscador_de_lineas.dart';
@@ -97,3 +98,12 @@ Future<void> buscar(WidgetTester tester, String text) async {
 /// El resultado del buscador con ese nombre (p. ej. "Línea D").
 Finder resultado(String nombre) =>
     find.descendant(of: find.byType(ResultadosDeBusqueda), matching: find.widgetWithText(ListTile, nombre));
+
+/// Acerca o aleja la cámara del mapa hasta [zoom], sin moverla de lugar, como al terminar un
+/// zoom con dos dedos.
+Future<void> zoomA(WidgetTester tester, double zoom) async {
+  final mapa = tester.element(find.byType(PolylineLayer));
+  MapController.of(mapa).move(MapCamera.of(mapa).center, zoom);
+  await tester.pumpAndSettle();
+  expect(MapCamera.of(tester.element(find.byType(PolylineLayer))).zoom, zoom);
+}
