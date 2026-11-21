@@ -148,4 +148,25 @@ void main() {
     expect(find.text('Agregar líneas'), findsNothing);
     semantics.dispose();
   });
+
+  testWidgets('los Medios son los títulos de la pantalla, por encima de sus Líneas', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final app = AppHarness(responses: {'/v1/subway/lines': subwayLines()});
+    await app.open(tester);
+    await openMisLineas(tester);
+    await addSubwayLine(tester, 'D');
+
+    final linea = tester.widget<Text>(find.text('Línea D')).style ?? const TextStyle();
+    final lineaSize = linea.fontSize ?? DefaultTextStyle.of(tester.element(find.text('Línea D'))).style.fontSize!;
+    for (final medio in ['Colectivo', 'Subte', 'Ecobici']) {
+      expect(
+        tester.getSemantics(find.text(medio)),
+        matchesSemantics(label: medio, isHeader: true),
+        reason: '$medio se anuncia como título',
+      );
+      final titulo = tester.widget<Text>(find.text(medio)).style!;
+      expect(titulo.fontSize, greaterThan(lineaSize), reason: '$medio se ve más grande que sus Líneas');
+    }
+    semantics.dispose();
+  });
 }

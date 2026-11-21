@@ -34,10 +34,11 @@ class MisLineasScreen extends StatelessWidget {
         builder: (context, _) {
           final medios = misLineas.medios;
           return ListView(
+            padding: const EdgeInsets.only(top: 8, bottom: 32),
             children: [
               if (!medios.contains(Medio.colectivo) && !medios.contains(Medio.subte))
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Text(
                     'Todavía no agregaste líneas. Tocá + arriba para agregar una de Colectivo o de Subte.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
@@ -141,7 +142,11 @@ class MisLineasScreen extends StatelessWidget {
   }
 }
 
-/// Encabezado de un grupo de la pantalla: el ícono y el nombre del Medio y, si se pasa, su "+".
+/// Espacio entre un grupo y el siguiente: separa los Medios sin necesidad de líneas divisorias.
+const _espacioEntreGrupos = 32.0;
+
+/// Encabezado de un grupo de la pantalla: el nombre del Medio como título de sección, con su
+/// ícono y, si se pasa, su "+".
 class _EncabezadoDeGrupo extends StatelessWidget {
   const _EncabezadoDeGrupo({required this.medio, this.agregar});
 
@@ -152,13 +157,24 @@ class _EncabezadoDeGrupo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 16, agregar == null ? 16 : 8, 4),
+      padding: EdgeInsets.fromLTRB(16, _espacioEntreGrupos, agregar == null ? 16 : 8, 8),
       child: Row(
         children: [
-          Icon(medio.icono),
+          Icon(medio.icono, size: 28, color: theme.colorScheme.primary),
           const SizedBox(width: 12),
-          Expanded(child: Text(medio.nombre, style: Theme.of(context).textTheme.titleMedium)),
+          Expanded(
+            child: Semantics(
+              header: true,
+              // Su propio nodo: si no, el lector de pantalla lo junta con el texto de abajo.
+              container: true,
+              child: Text(
+                medio.nombre,
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
           ?agregar,
         ],
       ),
@@ -194,7 +210,7 @@ class _GrupoDeLineas extends StatelessWidget {
         ),
         if (mias.isEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
               'Todavía no agregaste líneas de ${medio.nombre}.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
@@ -202,6 +218,7 @@ class _GrupoDeLineas extends StatelessWidget {
           ),
         for (final linea in mias)
           ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             leading: ExcludeSemantics(child: IconoDeLinea(linea: linea, size: 36)),
             title: Text(linea.nombre),
             trailing: IconButton(
