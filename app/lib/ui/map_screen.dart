@@ -35,6 +35,13 @@ String joinSpanish(List<String> items) => items.length <= 1
     ? items.join()
     : '${items.sublist(0, items.length - 1).join(', ')} y ${items.last}';
 
+/// Le saca el foco al buscador (y cierra el teclado) sin que la pantalla lo recuerde.
+///
+/// No usar `FocusScope.of(context).unfocus()`: le saca el foco a la pantalla entera, pero la
+/// pantalla sigue recordando al buscador como su último foco, y se lo devuelve (abriendo el
+/// teclado) en cuanto se cierra cualquier ficha modal.
+void soltarBuscador() => FocusManager.instance.primaryFocus?.unfocus();
+
 class MapScreen extends StatefulWidget {
   const MapScreen({
     super.key,
@@ -254,7 +261,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void _elegirResultado(Linea linea) {
     _lineSearch.clear();
     setState(() => _consulta = '');
-    FocusScope.of(context).unfocus();
+    soltarBuscador();
     _abrirFicha(linea);
   }
 
@@ -421,6 +428,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   void _openSheet(Widget sheet) {
+    // Al cerrarse la ficha, Flutter le devuelve el foco a quien lo tenía: si era el buscador,
+    // se abriría el teclado aunque el usuario lo hubiera cerrado con "atrás".
+    soltarBuscador();
     showModalBottomSheet<void>(context: context, showDragHandle: true, isScrollControlled: true, builder: (_) => sheet);
   }
 
@@ -597,7 +607,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
               if (_myLocation case final here?)
                 MarkerLayer(markers: [Marker(point: here, width: 22, height: 22, child: const UserLocationMarker())]),
-              const SimpleAttributionWidget(source: Text(AppConfig.mapAttribution)),
+              const _Atribucion(),
             ],
           ),
           SafeArea(
@@ -724,6 +734,8 @@ class _TopBar extends StatelessWidget {
               decoration: const InputDecoration(hintText: 'Buscar línea', border: InputBorder.none),
               onChanged: onChanged,
               onSubmitted: onSearch,
+              // Tocar el mapa (o cualquier cosa fuera del buscador) cierra el teclado.
+              onTapOutside: (_) => soltarBuscador(),
             ),
           ),
           IconButton(
@@ -769,6 +781,39 @@ class _EmptyMessage extends StatelessWidget {
             const SizedBox(height: 16),
             FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: const Text('Agregar líneas')),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// La atribución del mapa base, siempre visible (la piden OpenStreetMap y OpenFreeMap). Va abajo a
+/// la izquierda, sin llegar al botón de mi ubicación; si no entra en una línea, usa dos.
+class _Atribucion extends StatelessWidget {
+  const _Atribucion();
+
+  /// Lo que ocupa a la derecha el botón de mi ubicación, con sus márgenes.
+  static const _espacioDelBoton = 88.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.bottomLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(right: _espacioDelBoton),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: 0.8),
+            borderRadius: const BorderRadius.only(topRight: Radius.circular(6)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text(
+              '© ${AppConfig.mapAttribution}',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
         ),
       ),
     );

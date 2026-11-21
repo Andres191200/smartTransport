@@ -26,10 +26,27 @@ const _retryDelay = Duration(seconds: 10);
 final _styles = <String, Future<Style>>{};
 
 Future<Style> _style(String url) =>
-    _styles[url] ??= StyleReader(uri: url).read().catchError((Object e, StackTrace st) {
+    _styles[url] ??= StyleReader(uri: url).read().then((s) => _conIdPropio(s, url)).catchError((
+      Object e,
+      StackTrace st,
+    ) {
       _styles.remove(url); // que el próximo intento vuelva a descargarlo
       Error.throwWithStackTrace(e, st);
     });
+
+/// Los estilos de OpenFreeMap no traen "id", y vector_map_tiles guarda en disco las tiles ya
+/// dibujadas usando el id del tema como clave: sin un id propio por estilo, el claro y el oscuro
+/// compartirían las tiles. El id va pegado al estilo (y no al tema actual de la app) porque al
+/// cambiar de tema el mapa sigue mostrando el estilo anterior mientras llega el nuevo.
+/// (El prefijo "v2" descarta las tiles que una versión anterior guardó con el id equivocado.)
+Style _conIdPropio(Style style, String url) => Style(
+      name: style.name,
+      theme: style.theme.copyWith(id: 'v2-$url'),
+      providers: style.providers,
+      sprites: style.sprites,
+      center: style.center,
+      zoom: style.zoom,
+    );
 
 class _BaseMapState extends State<BaseMap> {
   Timer? _retry;

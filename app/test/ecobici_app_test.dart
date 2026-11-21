@@ -134,4 +134,31 @@ void main() {
     expect(tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, _switchText)).value, isTrue);
     semantics.dispose();
   });
+
+  testWidgets('cerrar la ficha de una estación no abre el teclado del buscador', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final app = AppHarness(responses: {'/v1/ecobici/stations': bikeStations()});
+    await app.open(tester);
+    await tester.tap(_ecobiciButton);
+    await tester.pumpAndSettle();
+
+    // El usuario usó el buscador y cerró el teclado con "atrás": el buscador sigue con el foco.
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+
+    await tester.tap(_station);
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+
+    // Tocar el mapa fuera de la ficha la cierra.
+    await tester.tapAt(const Offset(600, 300));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(tester.testTextInput.isVisible, isFalse, reason: 'el teclado no se abre solo');
+    expect(tester.testTextInput.hasAnyClients, isFalse, reason: 'el buscador no recupera el foco');
+    semantics.dispose();
+  });
 }
