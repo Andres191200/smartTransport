@@ -19,6 +19,30 @@ Map<String, Object> bikeStations() => {
       ],
     };
 
+/// Estaciones de Ecobici junto al Obelisco, cada una con sus bicis y si presta o no.
+Map<String, Object> estaciones(List<(String nombre, int bicis, bool presta)> datos) => {
+      'mode': 'live',
+      'stations': [
+        for (final (i, (nombre, bicis, presta)) in datos.indexed)
+          {
+            'id': '$i',
+            'name': nombre,
+            'lat': -34.6035 + i * 0.002,
+            'lon': -58.3815,
+            'bikes': bicis,
+            'docks': 5,
+            'operational': presta,
+          },
+      ],
+    };
+
+/// La estación que el lector de pantalla anuncia así.
+Finder estacion(String anuncio) => find.bySemanticsLabel(RegExp('^${RegExp.escape(anuncio)}'));
+
+/// El número (o "–") que muestra el marcador de la estación con ese anuncio.
+Finder textoDelMarcador(String anuncio, String texto) =>
+    find.descendant(of: estacion(anuncio), matching: find.text(texto));
+
 final _station = find.bySemanticsLabel(RegExp(r'^Ecobici Obelisco'));
 final _ecobiciButton = find.widgetWithText(InkWell, 'Ecobici');
 const _switchText = 'Mostrar estaciones al abrir la app';
@@ -159,6 +183,42 @@ void main() {
     expect(find.byType(BottomSheet), findsNothing);
     expect(tester.testTextInput.isVisible, isFalse, reason: 'el teclado no se abre solo');
     expect(tester.testTextInput.hasAnyClients, isFalse, reason: 'el buscador no recupera el foco');
+    semantics.dispose();
+  });
+
+  testWidgets('una estación sin bicis muestra "0" y una que no presta muestra "–"', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final app = AppHarness(responses: {
+      '/v1/ecobici/stations': estaciones([('Vacía', 0, true), ('Cerrada', 4, false), ('Llena', 7, true)]),
+    });
+    await app.open(tester);
+    await tester.tap(_ecobiciButton);
+    await tester.pumpAndSettle();
+
+    expect(textoDelMarcador('Ecobici Vacía: 0 bicis', '0'), findsOneWidget);
+    expect(textoDelMarcador('Ecobici Cerrada: 4 bicis', '–'), findsOneWidget);
+    expect(textoDelMarcador('Ecobici Cerrada: 4 bicis', '4'), findsNothing);
+    expect(textoDelMarcador('Ecobici Llena: 7 bicis', '7'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('el número de bicis de dos dígitos entra en el círculo de la estación', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final app = AppHarness(responses: {
+      '/v1/ecobici/stations': estaciones([('Grande', 88, true)]),
+    });
+    await app.open(tester);
+    await tester.tap(_ecobiciButton);
+    await tester.pumpAndSettle();
+
+    final marcador = tester.getRect(estacion('Ecobici Grande: 88 bicis'));
+    final numero = tester.getRect(textoDelMarcador('Ecobici Grande: 88 bicis', '88'));
+    // Adentro del borde blanco del círculo, centrado y en una sola línea.
+    const bordeBlanco = 1.5;
+    expect(numero.width, lessThanOrEqualTo(marcador.width - 2 * bordeBlanco));
+    expect(numero.center.dx, moreOrLessEquals(marcador.center.dx, epsilon: 0.5));
+    expect(numero.center.dy, moreOrLessEquals(marcador.center.dy, epsilon: 0.5));
+    expect(numero.height, lessThan(marcador.height / 2), reason: 'no se parte en dos líneas');
     semantics.dispose();
   });
 }
