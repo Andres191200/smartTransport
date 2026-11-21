@@ -72,6 +72,11 @@ flutter run --dart-define=API_BASE_URL=http://192.168.0.10:8080
 
 Tests: `flutter test` · Análisis: `flutter analyze`
 
+**Fluidez del mapa:** `tool/fluidez.sh` arrastra y hace zoom sobre el mapa (con datos fijos, sin
+backend) e imprime cuánto tardan los cuadros; los resultados crudos quedan en `app/mediciones/`.
+Corre en modo profile y solo sirve en un celular real por USB, con internet y la pantalla
+desbloqueada: en debug o en el emulador los números no dicen nada. `flutter test` no la corre.
+
 ## Antes de publicar en Play Store
 
 - **Alojar el backend con HTTPS** (Render, Fly.io, Railway…) y compilar con
