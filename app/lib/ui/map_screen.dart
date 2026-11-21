@@ -97,7 +97,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   List<SubwayLine> _subwayLines = const [];
   List<ServiceAlert> _alerts = const [];
-  List<BikeStation> _bikes = const [];
+  /// Los marcadores de las estaciones de Ecobici. Son unas 370, así que se arman solo cuando llegan
+  /// estaciones nuevas y no en cada build: mientras no cambian, el mapa reusa los mismos widgets.
+  List<Marker> _bikeMarkers = const [];
   LatLng? _myLocation;
 
   /// La Línea con la ficha abierta, si hay una. Su botón de la fila queda activo y el mapa dibuja
@@ -209,7 +211,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (!_ecobici) return;
     await _guard(() async {
       final bikes = await _api.bikeStations();
-      if (mounted) setState(() => _bikes = bikes);
+      if (mounted) setState(() => _bikeMarkers = [for (final s in bikes) _bikeMarker(s)]);
     });
   }
 
@@ -455,6 +457,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   // ---------------------------------------------------------------- UI
 
+  Marker _bikeMarker(BikeStation s) => Marker(
+        point: s.position,
+        width: 28,
+        height: 28,
+        child: GestureDetector(
+          onTap: () => _openSheet(BikeStationSheet(station: s)),
+          child: BikeStationMarker(station: s),
+        ),
+      );
+
   /// Las Líneas de Subte de Mis líneas, con su Recorrido y sus estaciones.
   List<SubwayLine> get _mySubwayLines => [
         for (final line in _subwayLines)
@@ -588,20 +600,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ],
                 ),
               if (showBikes)
-                MarkerLayer(
-                  markers: [
-                    for (final s in _bikes)
-                      Marker(
-                        point: s.position,
-                        width: 28,
-                        height: 28,
-                        child: GestureDetector(
-                          onTap: () => _openSheet(BikeStationSheet(station: s)),
-                          child: BikeStationMarker(station: s),
-                        ),
-                      ),
-                  ],
-                ),
+                MarkerLayer(markers: _bikeMarkers),
               MarkerLayer(
                 markers: [
                   for (final bus in _misBuses)

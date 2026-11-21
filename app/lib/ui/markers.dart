@@ -93,30 +93,48 @@ class TerminalDeColectivoMarker extends StatelessWidget {
   }
 }
 
+/// Una estación de Ecobici: un círculo del color de su disponibilidad, con borde blanco y su número
+/// de bicis, o "–" si no presta.
+///
+/// Se dibujan unas 370 a la vez, así que es barato a propósito: sin sombra difuminada (la reemplaza
+/// un contorno fino, para que se distinga sobre el mapa claro) y con el texto de tamaño fijo, sin
+/// `FittedBox`. El texto no sigue la escala de texto del sistema: el círculo tiene tamaño fijo, y
+/// el lector de pantalla anuncia las bicis igual.
 class BikeStationMarker extends StatelessWidget {
   const BikeStationMarker({super.key, required this.station});
 
   final BikeStation station;
 
+  static const _contorno = BoxDecoration(
+    shape: BoxShape.circle,
+    border: Border.fromBorderSide(
+      BorderSide(color: Colors.black38, width: 0.75, strokeAlign: BorderSide.strokeAlignOutside),
+    ),
+  );
+
+  static const _texto = TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12, height: 1);
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
       label: 'Ecobici ${station.name}: ${station.bikes} bicis',
-      child: Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: bikeAvailabilityColor(station),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 1.5),
-          boxShadow: const [BoxShadow(blurRadius: 2, color: Colors.black26, offset: Offset(0, 1))],
-        ),
-        child: FittedBox(
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Text(
-              station.operational ? '${station.bikes}' : '–',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-            ),
+      child: DecoratedBox(
+        decoration: _contorno,
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bikeAvailabilityColor(station),
+            shape: BoxShape.circle,
+            border: const Border.fromBorderSide(BorderSide(color: Colors.white, width: 1.5)),
+          ),
+          child: Text(
+            station.operational ? '${station.bikes}' : '–',
+            style: _texto,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.visible,
+            textAlign: TextAlign.center,
+            textScaler: TextScaler.noScaling,
           ),
         ),
       ),
