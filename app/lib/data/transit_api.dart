@@ -1,7 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpClient;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
+
 import 'models.dart';
 
 class ApiException implements Exception {
@@ -16,7 +20,9 @@ class ApiException implements Exception {
 class TransitApi {
   TransitApi({required String baseUrl, http.Client? client})
       : _baseUrl = baseUrl.replaceFirst(RegExp(r'/+$'), ''),
-        _client = client ?? http.Client();
+        // Si el servidor no responde ni a la conexión (p. ej. una URL que no existe en el
+        // teléfono), falla a los pocos segundos en vez de dejar la pantalla cargando.
+        _client = client ?? IOClient(HttpClient()..connectionTimeout = const Duration(seconds: 5));
 
   final String _baseUrl;
   final http.Client _client;
@@ -74,8 +80,10 @@ class TransitApi {
     try {
       res = await _client.get(uri).timeout(const Duration(seconds: 20));
     } on TimeoutException {
+      debugPrint('API: $uri no respondió a tiempo');
       throw const ApiException('El servidor tardó demasiado en responder');
-    } on Exception {
+    } on Exception catch (e) {
+      debugPrint('API: no se pudo conectar con $uri: $e');
       throw const ApiException('No se pudo conectar con el servidor');
     }
 

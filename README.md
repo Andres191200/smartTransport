@@ -58,7 +58,16 @@ y Android Studio (para el SDK de Android y el emulador).
 cd app
 flutter pub get
 flutter run                                              # emulador: usa http://10.0.2.2:8080
-flutter run --dart-define=API_BASE_URL=http://192.168.0.10:8080   # celular real en tu red
+```
+
+En un **celular real**, `10.0.2.2` no existe: hay que decirle a la app dónde está el backend.
+
+```bash
+# Por USB, sin depender de la IP de la PC (hace el adb reverse y el flutter run):
+tool/telefono.sh             # agregá --profile para ver la velocidad real del mapa
+
+# O por Wi-Fi, con la IP de la PC en tu red:
+flutter run --dart-define=API_BASE_URL=http://192.168.0.10:8080
 ```
 
 Tests: `flutter test` · Análisis: `flutter analyze`
